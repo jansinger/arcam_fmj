@@ -15,20 +15,29 @@ from . import (
     AmxDuetResponse,
     AnswerCodes,
     ApiModel,
+    BluetoothStatus,
     CommandCodes,
     CommandInvalidAtThisTime,
     CommandNotRecognised,
     DecodeMode2CH,
     DecodeModeMCH,
+    DolbyAudioMode,
+    HdmiSettings,
     IncomingAudioConfig,
     IncomingAudioFormat,
     MenuCodes,
+    NetworkPlaybackStatus,
     NotConnectedException,
+    NowPlayingEncoder,
+    NowPlayingInfo,
+    NowPlayingSampleRate,
     PresetDetail,
+    RoomEqNames,
     VideoParameters,
     ResponseException,
     ResponsePacket,
     SourceCodes,
+    ZoneSettings,
     POWER_WRITE_SUPPORTED,
     MUTE_WRITE_SUPPORTED,
     SOURCE_WRITE_SUPPORTED,
@@ -58,6 +67,7 @@ class State:
         self._client = client
         self._state = dict()
         self._presets = dict()
+        self._now_playing: dict[int, Any] = dict()
         self._amxduet: AmxDuetResponse | None = None
         self._api_model = api_model
 
@@ -99,6 +109,17 @@ class State:
             "DISPLAY_BRIGHTNESS": self.get_display_brightness(),
             "ROOM_EQUALIZATION": self.get_room_eq(),
             "COMPRESSION": self.get_compression(),
+            "NETWORK_PLAYBACK_STATUS": self.get_network_playback_status(),
+            "DOLBY_AUDIO": self.get_dolby_audio(),
+            "NOW_PLAYING_INFO": (
+                self.get_now_playing_info().to_dict()
+                if self.get_now_playing_info() is not None
+                else None
+            ),
+            "HDMI_SETTINGS": self.get_hdmi_settings(),
+            "ZONE_SETTINGS": self.get_zone_settings(),
+            "ROOM_EQ_NAMES": self.get_room_eq_names(),
+            "BLUETOOTH_STATUS": self.get_bluetooth_status(),
         }
 
     def __repr__(self) -> str:
@@ -447,17 +468,17 @@ class State:
             self._zn, CommandCodes.DISPLAY_BRIGHTNESS, bytes([brightness])
         )
 
-    def get_room_eq(self) -> bool | None:
+    def get_room_eq(self) -> int | None:
         value = self._state.get(CommandCodes.ROOM_EQUALIZATION)
         if value is None:
             return None
-        return int.from_bytes(value, "big") != 0
+        return int.from_bytes(value, "big")
 
-    async def set_room_eq(self, enabled: bool) -> None:
+    async def set_room_eq(self, preset: int) -> None:
         await self._client.request(
             self._zn,
             CommandCodes.ROOM_EQUALIZATION,
-            bytes([0x01 if enabled else 0x00]),
+            bytes([preset]),
         )
 
     def get_compression(self) -> int | None:
@@ -470,6 +491,54 @@ class State:
         await self._client.request(
             self._zn, CommandCodes.COMPRESSION, bytes([compression])
         )
+
+    def get_network_playback_status(self) -> NetworkPlaybackStatus | None:
+        value = self._state.get(CommandCodes.NETWORK_PLAYBACK_STATUS)
+        if value is None:
+            return None
+        return NetworkPlaybackStatus.from_bytes(value)
+
+    def get_dolby_audio(self) -> DolbyAudioMode | None:
+        value = self._state.get(CommandCodes.DOLBY_VOLUME)
+        if value is None:
+            return None
+        return DolbyAudioMode.from_bytes(value)
+
+    async def set_dolby_audio(self, mode: DolbyAudioMode) -> None:
+        await self._client.request(
+            self._zn, CommandCodes.DOLBY_VOLUME, bytes([mode])
+        )
+
+    def get_now_playing_info(self) -> NowPlayingInfo | None:
+        if not self._now_playing:
+            return None
+        return NowPlayingInfo.from_dict(self._now_playing)
+
+    def get_hdmi_settings(self) -> HdmiSettings | None:
+        value = self._state.get(CommandCodes.HDMI_SETTINGS)
+        if value is None:
+            return None
+        return HdmiSettings.from_bytes(value)
+
+    def get_zone_settings(self) -> ZoneSettings | None:
+        value = self._state.get(CommandCodes.ZONE_SETTINGS)
+        if value is None:
+            return None
+        return ZoneSettings.from_bytes(value)
+
+    def get_room_eq_names(self) -> RoomEqNames | None:
+        value = self._state.get(CommandCodes.ROOM_EQ_NAMES)
+        if value is None:
+            return None
+        return RoomEqNames.from_bytes(value)
+
+    def get_bluetooth_status(self) -> tuple[BluetoothStatus, str] | None:
+        value = self._state.get(CommandCodes.VIDEO_OUTPUT_FRAME_RATE)
+        if value is None:
+            return None
+        status = BluetoothStatus.from_bytes(value[:1])
+        track = value[1:].decode("utf8").rstrip() if len(value) > 1 else ""
+        return status, track
 
     def get_dab_station(self) -> str | None:
         value = self._state.get(CommandCodes.DAB_STATION)
@@ -539,6 +608,34 @@ class State:
                     return
             self._presets = presets
 
+        async def _update_now_playing() -> None:
+            now_playing: dict[int, Any] = {}
+            for sub_query in (0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5):
+                try:
+                    data = await self._client.request(
+                        self._zn, CommandCodes.NOW_PLAYING_INFO, bytes([sub_query])
+                    )
+                    if sub_query in (0xF4, 0xF5):
+                        # Sample rate and encoder are byte enums
+                        if sub_query == 0xF4:
+                            now_playing[sub_query] = NowPlayingSampleRate.from_bytes(data)
+                        else:
+                            now_playing[sub_query] = NowPlayingEncoder.from_bytes(data)
+                    else:
+                        # Text fields (title, artist, album, application)
+                        now_playing[sub_query] = data.decode("utf8").rstrip()
+                except CommandInvalidAtThisTime:
+                    break
+                except ResponseException as e:
+                    _LOGGER.debug("Response error skipping now_playing 0x%02X - %s", sub_query, e.ac)
+                except NotConnectedException:
+                    _LOGGER.debug("Not connected skipping now_playing")
+                    return
+                except TimeoutError:
+                    _LOGGER.error("Timeout requesting now_playing 0x%02X", sub_query)
+                    return
+            self._now_playing = now_playing
+
         async def _update_amxduet() -> None:
             try:
                 data = await self._client.request_raw(AmxDuetRequest())
@@ -594,6 +691,13 @@ class State:
                     _update(CommandCodes.DISPLAY_BRIGHTNESS),
                     _update(CommandCodes.ROOM_EQUALIZATION),
                     _update(CommandCodes.COMPRESSION),
+                    _update(CommandCodes.NETWORK_PLAYBACK_STATUS),
+                    _update(CommandCodes.DOLBY_VOLUME),
+                    _update(CommandCodes.HDMI_SETTINGS),
+                    _update(CommandCodes.ZONE_SETTINGS),
+                    _update(CommandCodes.ROOM_EQ_NAMES),
+                    _update(CommandCodes.VIDEO_OUTPUT_FRAME_RATE),
+                    _update_now_playing(),
                 ]
                 await asyncio.gather(*updates)
             else:
@@ -617,3 +721,5 @@ class State:
         else:
             if self._state:
                 self._state = dict()
+            if self._now_playing:
+                self._now_playing = dict()

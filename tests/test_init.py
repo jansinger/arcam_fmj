@@ -141,3 +141,254 @@ def test_amx_duet_response_responds_to_command_packet():
     amx_response = AmxDuetResponse({"Device-Model": "AVR450"})
     command = CommandPacket(1, CommandCodes.POWER, bytes([0xF0]))
     assert amx_response.responds_to(command) is False
+
+
+# --- Tests for NetworkPlaybackStatus enum ---
+
+
+def test_network_playback_status_values():
+    """Test that NetworkPlaybackStatus enum has correct values per SH289E spec."""
+    from arcam.fmj import NetworkPlaybackStatus
+
+    assert NetworkPlaybackStatus.STOPPED == 0x00
+    assert NetworkPlaybackStatus.TRANSITIONING == 0x01
+    assert NetworkPlaybackStatus.PLAYING == 0x02
+    assert NetworkPlaybackStatus.PAUSED == 0x03
+
+
+def test_network_playback_status_from_bytes():
+    """Test NetworkPlaybackStatus parsing from bytes."""
+    from arcam.fmj import NetworkPlaybackStatus
+
+    assert NetworkPlaybackStatus.from_bytes(bytes([0x00])) == NetworkPlaybackStatus.STOPPED
+    assert NetworkPlaybackStatus.from_bytes(bytes([0x02])) == NetworkPlaybackStatus.PLAYING
+    assert NetworkPlaybackStatus.from_bytes(bytes([0x03])) == NetworkPlaybackStatus.PAUSED
+
+
+# --- Tests for DolbyAudioMode enum ---
+
+
+def test_dolby_audio_mode_values():
+    """Test that DolbyAudioMode has 4 modes per SH289E spec (not boolean)."""
+    from arcam.fmj import DolbyAudioMode
+
+    assert DolbyAudioMode.OFF == 0x00
+    assert DolbyAudioMode.MOVIE == 0x01
+    assert DolbyAudioMode.MUSIC == 0x02
+    assert DolbyAudioMode.NIGHT == 0x03
+
+
+def test_dolby_audio_mode_from_bytes():
+    """Test DolbyAudioMode parsing from bytes."""
+    from arcam.fmj import DolbyAudioMode
+
+    assert DolbyAudioMode.from_bytes(bytes([0x00])) == DolbyAudioMode.OFF
+    assert DolbyAudioMode.from_bytes(bytes([0x01])) == DolbyAudioMode.MOVIE
+    assert DolbyAudioMode.from_bytes(bytes([0x03])) == DolbyAudioMode.NIGHT
+
+
+# --- Tests for NowPlayingSampleRate enum ---
+
+
+def test_now_playing_sample_rate_values():
+    """Test NowPlayingSampleRate enum values per SH289E spec."""
+    from arcam.fmj import NowPlayingSampleRate
+
+    assert NowPlayingSampleRate.KHZ_32 == 0x00
+    assert NowPlayingSampleRate.KHZ_44_1 == 0x01
+    assert NowPlayingSampleRate.KHZ_48 == 0x02
+    assert NowPlayingSampleRate.KHZ_88_2 == 0x03
+    assert NowPlayingSampleRate.KHZ_96 == 0x04
+    assert NowPlayingSampleRate.KHZ_176_4 == 0x05
+    assert NowPlayingSampleRate.KHZ_192 == 0x06
+    assert NowPlayingSampleRate.UNKNOWN == 0x07
+    assert NowPlayingSampleRate.UNDETECTED == 0x08
+
+
+# --- Tests for NowPlayingEncoder enum ---
+
+
+def test_now_playing_encoder_values():
+    """Test NowPlayingEncoder enum values per SH289E spec."""
+    from arcam.fmj import NowPlayingEncoder
+
+    assert NowPlayingEncoder.MP3 == 0x00
+    assert NowPlayingEncoder.WAV == 0x01
+    assert NowPlayingEncoder.WMA == 0x02
+    assert NowPlayingEncoder.FLAC == 0x03
+    assert NowPlayingEncoder.ALAC == 0x04
+    assert NowPlayingEncoder.MQA == 0x05
+    assert NowPlayingEncoder.UNKNOWN == 0x0A
+
+
+# --- Tests for BluetoothStatus enum ---
+
+
+def test_bluetooth_status_values():
+    """Test BluetoothStatus enum values per SH289E spec."""
+    from arcam.fmj import BluetoothStatus
+
+    assert BluetoothStatus.NO_CONNECTION == 0x00
+    assert BluetoothStatus.CONNECTED_PAUSED == 0x01
+    assert BluetoothStatus.PLAYING_SBC == 0x02
+    assert BluetoothStatus.PLAYING_AAC == 0x03
+    assert BluetoothStatus.PLAYING_APTX == 0x04
+    assert BluetoothStatus.PLAYING_APTX_HD == 0x05
+
+
+# --- Tests for NowPlayingInfo data class ---
+
+
+def test_now_playing_info_from_dict_full():
+    """Test NowPlayingInfo.from_dict with all fields populated."""
+    from arcam.fmj import NowPlayingInfo, NowPlayingSampleRate, NowPlayingEncoder
+
+    data = {
+        0xF0: "Test Song",
+        0xF1: "Test Artist",
+        0xF2: "Test Album",
+        0xF3: "Spotify",
+        0xF4: NowPlayingSampleRate.KHZ_44_1,
+        0xF5: NowPlayingEncoder.FLAC,
+    }
+    info = NowPlayingInfo.from_dict(data)
+    assert info.title == "Test Song"
+    assert info.artist == "Test Artist"
+    assert info.album == "Test Album"
+    assert info.application == "Spotify"
+    assert info.sample_rate == NowPlayingSampleRate.KHZ_44_1
+    assert info.encoder == NowPlayingEncoder.FLAC
+
+
+def test_now_playing_info_from_dict_partial():
+    """Test NowPlayingInfo.from_dict with only title, defaults empty."""
+    from arcam.fmj import NowPlayingInfo
+
+    data = {0xF0: "Only Title"}
+    info = NowPlayingInfo.from_dict(data)
+    assert info.title == "Only Title"
+    assert info.artist == ""
+    assert info.album == ""
+    assert info.application == ""
+    assert info.sample_rate is None
+    assert info.encoder is None
+
+
+def test_now_playing_info_from_dict_empty():
+    """Test NowPlayingInfo.from_dict with empty dict."""
+    from arcam.fmj import NowPlayingInfo
+
+    info = NowPlayingInfo.from_dict({})
+    assert info.title == ""
+    assert info.artist == ""
+
+
+def test_now_playing_info_to_dict():
+    """Test NowPlayingInfo.to_dict round-trip."""
+    from arcam.fmj import NowPlayingInfo, NowPlayingSampleRate, NowPlayingEncoder
+
+    info = NowPlayingInfo(
+        title="Song",
+        artist="Artist",
+        album="Album",
+        application="App",
+        sample_rate=NowPlayingSampleRate.KHZ_48,
+        encoder=NowPlayingEncoder.AAC if hasattr(NowPlayingEncoder, "AAC") else NowPlayingEncoder.MP3,
+    )
+    d = info.to_dict()
+    assert d["title"] == "Song"
+    assert d["artist"] == "Artist"
+    assert d["album"] == "Album"
+    assert len(d) == 6
+
+
+# --- Tests for HdmiSettings data class ---
+
+
+def test_hdmi_settings_from_bytes():
+    """Test HdmiSettings.from_bytes parsing 10-byte response."""
+    from arcam.fmj import HdmiSettings
+
+    # Zone1 OSD=On, Out=Out1, Lipsync=50ms, AudioToTV=On,
+    # Bypass=Off, Source=STB, CEC=Output1, ARC=Auto, TV Audio=Auto, PowerOff=Auto
+    data = bytes([0x01, 0x01, 0x32, 0x01, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01])
+    settings = HdmiSettings.from_bytes(data)
+    assert settings.zone1_osd is True
+    assert settings.zone1_output == 1
+    assert settings.zone1_lipsync == 0x32
+    assert settings.hdmi_audio_to_tv is True
+    assert settings.hdmi_bypass_ip is False
+    assert settings.hdmi_bypass_source == 1
+    assert settings.cec_control == 1
+    assert settings.arc_control == 1
+    assert settings.tv_audio == 1
+    assert settings.power_off_control == 1
+
+
+def test_hdmi_settings_from_bytes_all_off():
+    """Test HdmiSettings.from_bytes with all features off."""
+    from arcam.fmj import HdmiSettings
+
+    data = bytes([0x00] * 10)
+    settings = HdmiSettings.from_bytes(data)
+    assert settings.zone1_osd is False
+    assert settings.zone1_output == 0
+    assert settings.hdmi_audio_to_tv is False
+    assert settings.hdmi_bypass_ip is False
+    assert settings.cec_control == 0
+    assert settings.arc_control == 0
+
+
+# --- Tests for ZoneSettings data class ---
+
+
+def test_zone_settings_from_bytes():
+    """Test ZoneSettings.from_bytes parsing 6-byte response."""
+    from arcam.fmj import ZoneSettings
+
+    # Input=CD, Status=On, Volume=50, MaxVol=83, Fixed=No, MaxOnVol=50
+    data = bytes([0x01, 0x01, 0x32, 0x53, 0x00, 0x32])
+    settings = ZoneSettings.from_bytes(data)
+    assert settings.zone2_input == 1
+    assert settings.zone2_status == 1
+    assert settings.zone2_volume == 0x32
+    assert settings.zone2_max_volume == 0x53
+    assert settings.zone2_fixed_volume is False
+    assert settings.zone2_max_on_volume == 0x32
+
+
+def test_zone_settings_fixed_volume():
+    """Test ZoneSettings with fixed volume enabled."""
+    from arcam.fmj import ZoneSettings
+
+    data = bytes([0x00, 0x01, 0x32, 0x53, 0x01, 0x32])
+    settings = ZoneSettings.from_bytes(data)
+    assert settings.zone2_fixed_volume is True
+
+
+# --- Tests for RoomEqNames data class ---
+
+
+def test_room_eq_names_from_bytes_full():
+    """Test RoomEqNames.from_bytes with all 3 names (60 bytes)."""
+    from arcam.fmj import RoomEqNames
+
+    eq1 = b"Living Room\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    eq2 = b"Cinema Mode\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    eq3 = b"Music Room\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    data = eq1 + eq2 + eq3
+    names = RoomEqNames.from_bytes(data)
+    assert names.eq1 == "Living Room"
+    assert names.eq2 == "Cinema Mode"
+    assert names.eq3 == "Music Room"
+
+
+def test_room_eq_names_from_bytes_partial():
+    """Test RoomEqNames.from_bytes with only 1 EQ (20 bytes)."""
+    from arcam.fmj import RoomEqNames
+
+    eq1 = b"My EQ\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    names = RoomEqNames.from_bytes(eq1)
+    assert names.eq1 == "My EQ"
+    assert names.eq2 == ""
+    assert names.eq3 == ""

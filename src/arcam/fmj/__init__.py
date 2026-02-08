@@ -980,6 +980,61 @@ class IncomingAudioConfig(IntOrTypeEnum):
     AURO_13_1 = 0x38
 
 
+class NetworkPlaybackStatus(IntOrTypeEnum):
+    """Network playback status (HDA series, command 0x1C)."""
+
+    STOPPED = 0x00
+    TRANSITIONING = 0x01
+    PLAYING = 0x02
+    PAUSED = 0x03
+
+
+class DolbyAudioMode(IntOrTypeEnum):
+    """Dolby Audio mode (command 0x38, called DOLBY_VOLUME in CommandCodes)."""
+
+    OFF = 0x00
+    MOVIE = 0x01
+    MUSIC = 0x02
+    NIGHT = 0x03
+
+
+class NowPlayingSampleRate(IntOrTypeEnum):
+    """Sample rate for NOW_PLAYING_INFO query 0xF4."""
+
+    KHZ_32 = 0x00
+    KHZ_44_1 = 0x01
+    KHZ_48 = 0x02
+    KHZ_88_2 = 0x03
+    KHZ_96 = 0x04
+    KHZ_176_4 = 0x05
+    KHZ_192 = 0x06
+    UNKNOWN = 0x07
+    UNDETECTED = 0x08
+
+
+class NowPlayingEncoder(IntOrTypeEnum):
+    """Audio encoder for NOW_PLAYING_INFO query 0xF5."""
+
+    MP3 = 0x00
+    WAV = 0x01
+    WMA = 0x02
+    FLAC = 0x03
+    ALAC = 0x04
+    MQA = 0x05
+    UNKNOWN = 0x0A
+
+
+class BluetoothStatus(IntOrTypeEnum):
+    """Bluetooth connection status (command 0x50 on HDA series)."""
+
+    NO_CONNECTION = 0x00
+    CONNECTED_PAUSED = 0x01
+    PLAYING_SBC = 0x02
+    PLAYING_AAC = 0x03
+    PLAYING_APTX = 0x04
+    PLAYING_APTX_HD = 0x05
+
+
 class PresetType(IntOrTypeEnum):
     """List of possible audio configurations."""
 
@@ -1038,6 +1093,110 @@ class VideoParameters:
             "aspect_ratio": self.aspect_ratio,
             "colorspace": self.colorspace,
         }
+
+
+@attr.s
+class NowPlayingInfo:
+    """Now playing information from HDA series receivers (command 0x64)."""
+
+    title: str = attr.ib(default="")
+    artist: str = attr.ib(default="")
+    album: str = attr.ib(default="")
+    application: str = attr.ib(default="")
+    sample_rate: NowPlayingSampleRate | None = attr.ib(default=None)
+    encoder: NowPlayingEncoder | None = attr.ib(default=None)
+
+    @staticmethod
+    def from_dict(data: dict) -> "NowPlayingInfo":
+        return NowPlayingInfo(
+            title=data.get(0xF0, ""),
+            artist=data.get(0xF1, ""),
+            album=data.get(0xF2, ""),
+            application=data.get(0xF3, ""),
+            sample_rate=data.get(0xF4),
+            encoder=data.get(0xF5),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "artist": self.artist,
+            "album": self.album,
+            "application": self.application,
+            "sample_rate": self.sample_rate,
+            "encoder": self.encoder,
+        }
+
+
+@attr.s
+class HdmiSettings:
+    """HDMI settings (HDA series, command 0x2E). 10-byte response."""
+
+    zone1_osd: bool = attr.ib()
+    zone1_output: int = attr.ib()
+    zone1_lipsync: int = attr.ib()
+    hdmi_audio_to_tv: bool = attr.ib()
+    hdmi_bypass_ip: bool = attr.ib()
+    hdmi_bypass_source: int = attr.ib()
+    cec_control: int = attr.ib()
+    arc_control: int = attr.ib()
+    tv_audio: int = attr.ib()
+    power_off_control: int = attr.ib()
+
+    @staticmethod
+    def from_bytes(data: bytes) -> "HdmiSettings":
+        return HdmiSettings(
+            zone1_osd=data[0] != 0,
+            zone1_output=data[1],
+            zone1_lipsync=data[2],
+            hdmi_audio_to_tv=data[3] != 0,
+            hdmi_bypass_ip=data[4] != 0,
+            hdmi_bypass_source=data[5],
+            cec_control=data[6],
+            arc_control=data[7],
+            tv_audio=data[8],
+            power_off_control=data[9],
+        )
+
+
+@attr.s
+class ZoneSettings:
+    """Zone settings (HDA multi-zone series, command 0x2F). 6-byte response."""
+
+    zone2_input: int = attr.ib()
+    zone2_status: int = attr.ib()
+    zone2_volume: int = attr.ib()
+    zone2_max_volume: int = attr.ib()
+    zone2_fixed_volume: bool = attr.ib()
+    zone2_max_on_volume: int = attr.ib()
+
+    @staticmethod
+    def from_bytes(data: bytes) -> "ZoneSettings":
+        return ZoneSettings(
+            zone2_input=data[0],
+            zone2_status=data[1],
+            zone2_volume=data[2],
+            zone2_max_volume=data[3],
+            zone2_fixed_volume=data[4] != 0,
+            zone2_max_on_volume=data[5],
+        )
+
+
+@attr.s
+class RoomEqNames:
+    """Room EQ preset names (HDA series, command 0x34). Up to 60-byte response."""
+
+    eq1: str = attr.ib(default="")
+    eq2: str = attr.ib(default="")
+    eq3: str = attr.ib(default="")
+
+    @staticmethod
+    def from_bytes(data: bytes) -> "RoomEqNames":
+        n = len(data)
+        eq1 = data[0:20].decode("ascii").rstrip("\x00").rstrip() if n >= 20 else ""
+        eq2 = data[20:40].decode("ascii").rstrip("\x00").rstrip() if n >= 40 else ""
+        eq3 = data[40:60].decode("ascii").rstrip("\x00").rstrip() if n >= 60 else ""
+        return RoomEqNames(eq1=eq1, eq2=eq2, eq3=eq3)
 
 
 @attr.s
