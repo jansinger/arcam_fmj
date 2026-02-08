@@ -306,6 +306,15 @@ class State:
             await self._client.request(
                 self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command
             )
+            # Query mute state after RC5 command to update _state[MUTE]
+            # RC5 commands don't update the MUTE state directly, only SIMULATE_RC5_IR_COMMAND
+            try:
+                data = await self._client.request(
+                    self._zn, CommandCodes.MUTE, bytes([0xF0])
+                )
+                self._state[CommandCodes.MUTE] = data
+            except Exception:
+                pass  # State will update on next poll
 
     def get_source(self) -> SourceCodes | None:
         value = self._state.get(CommandCodes.CURRENT_SOURCE)
