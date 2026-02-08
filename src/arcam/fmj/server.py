@@ -121,6 +121,7 @@ class ServerContext:
 
     async def __aenter__(self):
         await self._server.start()
+        return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self._server.stop()

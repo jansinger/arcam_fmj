@@ -1,11 +1,9 @@
 import asyncio
-import aiohttp
 import functools
 import logging
 import re
-from datetime import datetime, timedelta
-from defusedxml import ElementTree
-from typing import Optional, Any
+import time
+from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,17 +30,17 @@ def async_retry(attempts=2, allowed_exceptions=()):
 
 class Throttle:
     def __init__(self, delay: float) -> None:
-        self._timestamp = datetime.now()
+        self._timestamp = time.monotonic()
         self._lock = asyncio.Lock()
-        self._delay = timedelta(seconds=delay)
+        self._delay = delay
 
     async def get(self) -> None:
         async with self._lock:
-            timestamp = datetime.now()
-            delay = (self._timestamp - timestamp).total_seconds()
+            now = time.monotonic()
+            delay = self._timestamp - now
             if delay > 0:
                 await asyncio.sleep(delay)
-            self._timestamp = datetime.now() + self._delay
+            self._timestamp = time.monotonic() + self._delay
 
 
 def _log_exception(msg, *args):
@@ -60,6 +58,8 @@ def get_uniqueid_from_udn(data) -> str | None:
 
 
 def get_possibly_invalid_xml(data) -> Any:
+    from defusedxml import ElementTree
+
     try:
         return ElementTree.fromstring(data)
     except ElementTree.ParseError:
@@ -74,10 +74,11 @@ def get_udn_from_xml(xml: Any) -> str | None:
     )
 
 
-async def get_uniqueid_from_device_description(
-    session: aiohttp.ClientSession, url: str
-):
+async def get_uniqueid_from_device_description(session, url: str):
     """Retrieve and extract unique id from url."""
+    import aiohttp
+    from defusedxml import ElementTree
+
     try:
         async with session.get(url) as req:
             req.raise_for_status()
@@ -90,7 +91,7 @@ async def get_uniqueid_from_device_description(
         return None
 
 
-async def get_uniqueid_from_host(session: aiohttp.ClientSession, host: str):
+async def get_uniqueid_from_host(session, host: str):
     """Try to deduce a unique id from a host based on ssdp/upnp."""
     return await get_uniqueid_from_device_description(
         session, f"http://{host}:8080/dd.xml"

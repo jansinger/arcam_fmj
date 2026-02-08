@@ -156,7 +156,7 @@ APIVERSION_ST_SERIES = {"ST60"}
 
 APIVERSION_DAB_SERIES = {"AVR450", "AVR750"}
 APIVERSION_DAB_SERIES.update(
-    "AV860", "AVR850", "AVR550", "AVR390", "RV-6", "RV-9", "MC-10"
+    {"AV860", "AVR850", "AVR550", "AVR390", "RV-6", "RV-9", "MC-10"}
 )
 APIVERSION_DAB_SERIES.update(APIVERSION_HDA_SERIES)
 
@@ -563,7 +563,7 @@ SA_SOURCE_MAPPING = {
     SourceCodes.SAT: bytes([0x08]),
     SourceCodes.GAME: bytes([0x09]),
     SourceCodes.NET: bytes([0x0B]),
-    SourceCodes.USB: bytes([0x0B]),
+    SourceCodes.USB: bytes([0x0C]),  # TODO: verify against Arcam SA series docs (was duplicate 0x0B)
     SourceCodes.ARC_ERC: bytes([0x0D]),
 }
 
@@ -1001,9 +1001,9 @@ class PresetDetail:
         if type == PresetType.FM_RDS_NAME or type == PresetType.DAB:
             name = data[2:].decode("utf8").rstrip()
         elif type == PresetType.FM_FREQUENCY:
-            name = f"{data[2]}.{data[3]:2} MHz"
+            name = f"{data[2]}.{data[3]:02} MHz"
         elif type == PresetType.AM_FREQUENCY:
-            name = f"{data[2]}{data[3]:2} kHz"
+            name = f"{data[2]}{data[3]:02} kHz"
         else:
             name = str(data[2:])
         return PresetDetail(data[0], type, name)
@@ -1049,7 +1049,7 @@ class ResponsePacket:
     ac = attr.ib(type=int)
     data = attr.ib(type=bytes)
 
-    def respons_to(self, request: Union["AmxDuetRequest", "CommandPacket"]):
+    def responds_to(self, request: Union["AmxDuetRequest", "CommandPacket"]):
         if not isinstance(request, CommandPacket):
             return False
         return self.zn == request.zn and self.cc == request.cc
@@ -1057,7 +1057,7 @@ class ResponsePacket:
     @staticmethod
     def from_bytes(data: bytes) -> "ResponsePacket":
         if len(data) < 6:
-            raise InvalidPacket(f"Packet to short {data!r}")
+            raise InvalidPacket(f"Packet too short {data!r}")
 
         if data[4] != len(data) - 6:
             raise InvalidPacket(f"Invalid length in data {data!r}")
@@ -1099,7 +1099,7 @@ class CommandPacket:
     @staticmethod
     def from_bytes(data: bytes) -> "CommandPacket":
         if len(data) < 5:
-            raise InvalidPacket(f"Packet to short {data!r}")
+            raise InvalidPacket(f"Packet too short {data!r}")
 
         if data[3] != len(data) - 5:
             raise InvalidPacket(f"Invalid length in data {data!r}")
@@ -1141,7 +1141,7 @@ class AmxDuetResponse:
     def device_revision(self) -> str | None:
         return self.values.get("Device-Revision")
 
-    def respons_to(self, packet: AmxDuetRequest | CommandPacket):
+    def responds_to(self, packet: AmxDuetRequest | CommandPacket):
         if not isinstance(packet, AmxDuetRequest):
             return False
         return True

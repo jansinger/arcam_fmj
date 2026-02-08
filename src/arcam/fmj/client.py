@@ -3,7 +3,7 @@
 import asyncio
 from asyncio.streams import StreamReader, StreamWriter
 import logging
-from datetime import datetime, timedelta
+import time
 from contextlib import contextmanager
 from typing import Union, overload
 from collections.abc import Callable
@@ -27,10 +27,10 @@ from . import (
 from .utils import Throttle, async_retry
 
 _LOGGER = logging.getLogger(__name__)
-_REQUEST_TIMEOUT = timedelta(seconds=3)
+_REQUEST_TIMEOUT = 3.0
 _REQUEST_THROTTLE = 0.2
 
-_HEARTBEAT_INTERVAL = timedelta(seconds=5)
+_HEARTBEAT_INTERVAL = 5.0
 _HEARTBEAT_TIMEOUT = _HEARTBEAT_INTERVAL + _HEARTBEAT_INTERVAL
 
 
@@ -41,31 +41,37 @@ class ClientBase:
         self._task = None
         self._listen: set[Callable] = set()
         self._throttle = Throttle(_REQUEST_THROTTLE)
-        self._timestamp = datetime.now()
+        self._timestamp = time.monotonic()
+
+    def add_listener(self, listener: Callable) -> None:
+        self._listen.add(listener)
+
+    def remove_listener(self, listener: Callable) -> None:
+        self._listen.remove(listener)
 
     @contextmanager
     def listen(self, listener: Callable):
-        self._listen.add(listener)
+        self.add_listener(listener)
         yield self
-        self._listen.remove(listener)
+        self.remove_listener(listener)
 
     async def _process_heartbeat(self, writer: StreamWriter):
         while True:
-            delay = self._timestamp + _HEARTBEAT_INTERVAL - datetime.now()
-            if delay > timedelta():
-                await asyncio.sleep(delay.total_seconds())
+            delay = self._timestamp + _HEARTBEAT_INTERVAL - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
             else:
                 _LOGGER.debug("Sending ping")
                 await write_packet(
                     writer, CommandPacket(1, CommandCodes.POWER, bytes([0xF0]))
                 )
-                self._timestamp = datetime.now()
+                self._timestamp = time.monotonic()
 
     async def _process_data(self, reader: StreamReader):
         try:
             while True:
                 try:
-                    async with asyncio.timeout(_HEARTBEAT_TIMEOUT.total_seconds()):
+                    async with asyncio.timeout(_HEARTBEAT_TIMEOUT):
                         packet = await read_response(reader)
                 except TimeoutError as exception:
                     _LOGGER.debug("Missed all pings")
@@ -120,17 +126,17 @@ class ClientBase:
         future: asyncio.Future[ResponsePacket | AmxDuetResponse] = asyncio.Future()
 
         def listen(response: ResponsePacket | AmxDuetResponse):
-            if response.respons_to(request):
+            if response.responds_to(request):
                 if not (future.cancelled() or future.done()):
                     future.set_result(response)
 
         await self._throttle.get()
 
-        async with asyncio.timeout(_REQUEST_TIMEOUT.total_seconds()):
+        async with asyncio.timeout(_REQUEST_TIMEOUT):
             _LOGGER.debug("Requesting %s", request)
             with self.listen(listen):
                 await write_packet(writer, request)
-                self._timestamp = datetime.now()
+                self._timestamp = time.monotonic()
                 return await future
 
     async def send(self, zn: int, cc: CommandCodes, data: bytes) -> None:

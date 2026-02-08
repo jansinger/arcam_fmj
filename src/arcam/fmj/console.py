@@ -18,7 +18,6 @@ from . import (
     DecodeMode2CH,
     DecodeModeMCH,
     CommandNotRecognised,
-    _LOGGER,
     VideoParameters,
     ResponsePacket,
     AnswerCodes,
@@ -26,6 +25,8 @@ from . import (
     RC5CODE_DECODE_MODE_2CH,
     RC5CODE_DECODE_MODE_MCH,
 )
+
+_LOGGER = logging.getLogger(__name__)
 from .client import Client, ClientContext
 from .server import Server, ServerContext
 from .state import State
@@ -35,11 +36,6 @@ from .state import State
 
 def auto_int(x):
     return int(x, 0)
-
-
-def auto_bytes(x):
-    print(x)
-    return bytes.decode(x)
 
 
 def auto_source(x):

@@ -62,12 +62,10 @@ class State:
         self._api_model = api_model
 
     async def start(self) -> None:
-        # pylint: disable=protected-access
-        self._client._listen.add(self._listen)
+        self._client.add_listener(self._listen)
 
     async def stop(self) -> None:
-        # pylint: disable=protected-access
-        self._client._listen.remove(self._listen)
+        self._client.remove_listener(self._listen)
 
     async def __aenter__(self) -> "State":
         await self.start()
@@ -147,7 +145,7 @@ class State:
         lookup = table.get((self._api_model, self._zn))
         if not lookup:
             raise ValueError(
-                "Unkown mapping for model {} and zone {}".format(
+                "Unknown mapping for model {} and zone {}".format(
                     self._api_model, self._zn
                 )
             )
@@ -155,7 +153,7 @@ class State:
         command = lookup.get(value)
         if not command:
             raise ValueError(
-                "Unkown command for model {} and zone {} and value {}".format(
+                "Unknown command for model {} and zone {} and value {}".format(
                     self._api_model, self._zn, value
                 )
             )
@@ -185,7 +183,7 @@ class State:
         value = self._state.get(CommandCodes.INCOMING_AUDIO_SAMPLE_RATE)
         if value is None:
             return 0
-        map = {
+        sample_rate_mapping = {
             0x00: 32000,
             0x01: 44100,
             0x02: 48000,
@@ -194,7 +192,7 @@ class State:
             0x05: 176400,
             0x06: 192000,
         }
-        return map.get(value[0], 0)
+        return sample_rate_mapping.get(value[0], 0)
 
     def get_decode_mode_2ch(self) -> DecodeMode2CH | None:
         value = self._state.get(CommandCodes.DECODE_MODE_STATUS_2CH)
@@ -548,20 +546,15 @@ class State:
 
                 if data.device_model in APIVERSION_450_SERIES:
                     self._api_model = ApiModel.API450_SERIES
-
-                if data.device_model in APIVERSION_860_SERIES:
+                elif data.device_model in APIVERSION_860_SERIES:
                     self._api_model = ApiModel.API860_SERIES
-
-                if data.device_model in APIVERSION_HDA_SERIES:
+                elif data.device_model in APIVERSION_HDA_SERIES:
                     self._api_model = ApiModel.APIHDA_SERIES
-
-                if data.device_model in APIVERSION_SA_SERIES:
+                elif data.device_model in APIVERSION_SA_SERIES:
                     self._api_model = ApiModel.APISA_SERIES
-
-                if data.device_model in APIVERSION_PA_SERIES:
+                elif data.device_model in APIVERSION_PA_SERIES:
                     self._api_model = ApiModel.APIPA_SERIES
-
-                if data.device_model in APIVERSION_ST_SERIES:
+                elif data.device_model in APIVERSION_ST_SERIES:
                     self._api_model = ApiModel.APIST_SERIES
 
             except ResponseException as e:

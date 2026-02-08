@@ -20,7 +20,7 @@ Code to set volume and source using library.
     async def run():
 
         host = '192.168.0.2'
-        port = '50000'
+        port = 50000
         zone = 1
 
         volume = 50
@@ -33,8 +33,7 @@ Code to set volume and source using library.
             await state.set_volume(volume)
             await state.set_source(source)
 
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete (run())
+    asyncio.run(run())
 
 
 Console
