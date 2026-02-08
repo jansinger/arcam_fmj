@@ -495,6 +495,17 @@ BASE_UPDATE_CODES = {
     CommandCodes.TUNER_PRESET,
 }
 
+# Zone 2+ only polls zone-supported commands (no MENU, DECODE_MODE, VIDEO/AUDIO info)
+ZONE2_UPDATE_CODES = {
+    CommandCodes.VOLUME,
+    CommandCodes.MUTE,
+    CommandCodes.CURRENT_SOURCE,
+    CommandCodes.DAB_STATION,
+    CommandCodes.DLS_PDT_INFO,
+    CommandCodes.RDS_INFORMATION,
+    CommandCodes.TUNER_PRESET,
+}
+
 
 async def test_update_zone1_polls_audio_controls():
     """Test that update() on Zone 1 polls audio control commands."""
@@ -516,10 +527,17 @@ async def test_update_zone1_polls_audio_controls():
 
 
 async def test_update_zone2_skips_audio_controls():
-    """Test that update() on Zone 2 does NOT poll audio control commands."""
+    """Test that update() on Zone 2 does NOT poll audio control commands even when powered on."""
     client = MagicMock(spec=Client)
     client.connected = True
-    client.request = AsyncMock(side_effect=CommandInvalidAtThisTime)
+
+    # POWER returns "on" (0x01), other commands raise CommandInvalidAtThisTime
+    async def mock_request(zn, cc, data):
+        if cc == CommandCodes.POWER:
+            return bytes([0x01])
+        raise CommandInvalidAtThisTime()
+
+    client.request = AsyncMock(side_effect=mock_request)
     client.request_raw = AsyncMock(side_effect=TimeoutError)
     state = State(client, 2, ApiModel.API450_SERIES)
 
@@ -534,11 +552,18 @@ async def test_update_zone2_skips_audio_controls():
         assert cc not in polled_codes, f"{cc} should NOT be polled on Zone 2"
 
 
-async def test_update_zone2_polls_base_controls():
-    """Test that update() on Zone 2 still polls base controls."""
+async def test_update_zone2_powered_on_polls_zone_commands():
+    """Test that update() on Zone 2 polls zone commands when powered on."""
     client = MagicMock(spec=Client)
     client.connected = True
-    client.request = AsyncMock(side_effect=CommandInvalidAtThisTime)
+
+    # POWER returns "on" (0x01), other commands raise CommandInvalidAtThisTime
+    async def mock_request(zn, cc, data):
+        if cc == CommandCodes.POWER:
+            return bytes([0x01])
+        raise CommandInvalidAtThisTime()
+
+    client.request = AsyncMock(side_effect=mock_request)
     client.request_raw = AsyncMock(side_effect=TimeoutError)
     state = State(client, 2, ApiModel.API450_SERIES)
 
@@ -549,8 +574,37 @@ async def test_update_zone2_polls_base_controls():
         for args in client.request.call_args_list
         if len(args[0]) >= 2
     }
-    for cc in BASE_UPDATE_CODES:
-        assert cc in polled_codes, f"{cc} should be polled on Zone 2"
+    # POWER should always be polled
+    assert CommandCodes.POWER in polled_codes
+    # When powered on, zone-supported commands should be polled
+    for cc in ZONE2_UPDATE_CODES:
+        assert cc in polled_codes, f"{cc} should be polled on Zone 2 when powered on"
+
+
+async def test_update_zone2_powered_off_only_polls_power():
+    """Test that update() on Zone 2 only polls POWER when zone is off."""
+    client = MagicMock(spec=Client)
+    client.connected = True
+
+    # POWER returns "off" (0x00)
+    async def mock_request(zn, cc, data):
+        if cc == CommandCodes.POWER:
+            return bytes([0x00])
+        raise CommandInvalidAtThisTime()
+
+    client.request = AsyncMock(side_effect=mock_request)
+    client.request_raw = AsyncMock(side_effect=TimeoutError)
+    state = State(client, 2, ApiModel.API450_SERIES)
+
+    await state.update()
+
+    polled_codes = {
+        args[0][1]
+        for args in client.request.call_args_list
+        if len(args[0]) >= 2
+    }
+    # Only POWER should be polled when zone is off
+    assert polled_codes == {CommandCodes.POWER}
 
 
 async def test_update_disconnected_clears_state():

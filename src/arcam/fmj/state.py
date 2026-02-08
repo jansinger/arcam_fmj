@@ -575,27 +575,24 @@ class State:
             if self._amxduet is None:
                 await _update_amxduet()
 
-            updates = [
-                _update(CommandCodes.POWER),
-                _update(CommandCodes.VOLUME),
-                _update(CommandCodes.MUTE),
-                _update(CommandCodes.CURRENT_SOURCE),
-                _update(CommandCodes.MENU),
-                _update(CommandCodes.DECODE_MODE_STATUS_2CH),
-                _update(CommandCodes.DECODE_MODE_STATUS_MCH),
-                _update(CommandCodes.INCOMING_VIDEO_PARAMETERS),
-                _update(CommandCodes.INCOMING_AUDIO_FORMAT),
-                _update(CommandCodes.INCOMING_AUDIO_SAMPLE_RATE),
-                _update(CommandCodes.DAB_STATION),
-                _update(CommandCodes.DLS_PDT_INFO),
-                _update(CommandCodes.RDS_INFORMATION),
-                _update(CommandCodes.TUNER_PRESET),
-                _update_presets(),
-            ]
-
-            # Audio controls only supported on Zone 1
             if self._zn == 1:
-                updates.extend([
+                # Zone 1: poll all commands in parallel
+                updates = [
+                    _update(CommandCodes.POWER),
+                    _update(CommandCodes.VOLUME),
+                    _update(CommandCodes.MUTE),
+                    _update(CommandCodes.CURRENT_SOURCE),
+                    _update(CommandCodes.MENU),
+                    _update(CommandCodes.DECODE_MODE_STATUS_2CH),
+                    _update(CommandCodes.DECODE_MODE_STATUS_MCH),
+                    _update(CommandCodes.INCOMING_VIDEO_PARAMETERS),
+                    _update(CommandCodes.INCOMING_AUDIO_FORMAT),
+                    _update(CommandCodes.INCOMING_AUDIO_SAMPLE_RATE),
+                    _update(CommandCodes.DAB_STATION),
+                    _update(CommandCodes.DLS_PDT_INFO),
+                    _update(CommandCodes.RDS_INFORMATION),
+                    _update(CommandCodes.TUNER_PRESET),
+                    _update_presets(),
                     _update(CommandCodes.BASS_EQUALIZATION),
                     _update(CommandCodes.TREBLE_EQUALIZATION),
                     _update(CommandCodes.BALANCE),
@@ -604,9 +601,26 @@ class State:
                     _update(CommandCodes.DISPLAY_BRIGHTNESS),
                     _update(CommandCodes.ROOM_EQUALIZATION),
                     _update(CommandCodes.COMPRESSION),
-                ])
+                ]
+                await asyncio.gather(*updates)
+            else:
+                # Zone 2+: poll power first, then only poll remaining
+                # commands if the zone is actually powered on. This avoids
+                # timeouts and retries for commands sent to inactive zones.
+                await _update(CommandCodes.POWER)
 
-            await asyncio.gather(*updates)
+                if self.get_power() is True:
+                    updates = [
+                        _update(CommandCodes.VOLUME),
+                        _update(CommandCodes.MUTE),
+                        _update(CommandCodes.CURRENT_SOURCE),
+                        _update(CommandCodes.DAB_STATION),
+                        _update(CommandCodes.DLS_PDT_INFO),
+                        _update(CommandCodes.RDS_INFORMATION),
+                        _update(CommandCodes.TUNER_PRESET),
+                        _update_presets(),
+                    ]
+                    await asyncio.gather(*updates)
         else:
             if self._state:
                 self._state = dict()
