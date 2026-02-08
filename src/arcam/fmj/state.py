@@ -254,31 +254,45 @@ class State:
 
     def get_decode_mode(self) -> DecodeModeMCH | DecodeMode2CH | None:
         if self.get_2ch():
-            return self.get_decode_mode_2ch()
+            result = self.get_decode_mode_2ch()
+            if result is None:
+                result = self.get_decode_mode_mch()
+            return result
         else:
-            return self.get_decode_mode_mch()
+            result = self.get_decode_mode_mch()
+            if result is None:
+                result = self.get_decode_mode_2ch()
+            return result
 
     def get_decode_modes(
         self,
     ) -> list[DecodeModeMCH] | list[DecodeMode2CH] | None:
         if self.get_2ch():
-            return list(RC5CODE_DECODE_MODE_2CH[(self._api_model, self._zn)])
+            modes = RC5CODE_DECODE_MODE_2CH.get((self._api_model, self._zn))
+            if not modes:
+                modes = RC5CODE_DECODE_MODE_MCH.get((self._api_model, self._zn))
+            return list(modes) if modes else None
         else:
-            return list(RC5CODE_DECODE_MODE_MCH[(self._api_model, self._zn)])
+            modes = RC5CODE_DECODE_MODE_MCH.get((self._api_model, self._zn))
+            if not modes:
+                modes = RC5CODE_DECODE_MODE_2CH.get((self._api_model, self._zn))
+            return list(modes) if modes else None
 
     async def set_decode_mode(self, mode: str | DecodeModeMCH | DecodeMode2CH) -> None:
-        if self.get_2ch():
-            if isinstance(mode, str):
-                mode = DecodeMode2CH[mode]
-            elif not isinstance(mode, DecodeMode2CH):
-                raise ValueError("Decode mode not supported at this time")
+        if isinstance(mode, DecodeMode2CH):
             await self.set_decode_mode_2ch(mode)
-        else:
-            if isinstance(mode, str):
-                mode = DecodeModeMCH[mode]
-            elif not isinstance(mode, DecodeModeMCH):
-                raise ValueError("Decode mode not supported at this time")
+        elif isinstance(mode, DecodeModeMCH):
             await self.set_decode_mode_mch(mode)
+        elif self.get_2ch():
+            try:
+                await self.set_decode_mode_2ch(DecodeMode2CH[mode])
+            except KeyError:
+                await self.set_decode_mode_mch(DecodeModeMCH[mode])
+        else:
+            try:
+                await self.set_decode_mode_mch(DecodeModeMCH[mode])
+            except KeyError:
+                await self.set_decode_mode_2ch(DecodeMode2CH[mode])
 
     def get_power(self) -> bool | None:
         value = self._state.get(CommandCodes.POWER)

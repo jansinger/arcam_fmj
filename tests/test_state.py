@@ -297,6 +297,123 @@ async def test_to_dict_includes_new_hda_keys():
         assert key in result, f"to_dict() should include key '{key}'"
 
 
+# --- Tests for get_decode_mode fallback ---
+
+
+async def test_get_decode_mode_2ch_fallback_to_mch():
+    """When 2CH mode returns None (error), falls back to MCH mode."""
+    from arcam.fmj import DecodeModeMCH, IncomingAudioFormat
+
+    state = _make_state()
+    # Audio format is PCM -> get_2ch() returns True
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([0x00, 0x1A])
+    # 2CH returns error (None), MCH has a valid value
+    state._state[CommandCodes.DECODE_MODE_STATUS_2CH] = None
+    state._state[CommandCodes.DECODE_MODE_STATUS_MCH] = bytes([0x06])
+    result = state.get_decode_mode()
+    assert result == DecodeModeMCH.DOLBY_SURROUND
+
+
+async def test_get_decode_mode_mch_fallback_to_2ch():
+    """When MCH mode returns None (error), falls back to 2CH mode."""
+    from arcam.fmj import DecodeMode2CH, IncomingAudioFormat
+
+    state = _make_state()
+    # Audio format is Dolby -> get_2ch() returns False
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([0x02, 0x00])
+    # MCH returns error (None), 2CH has a valid value
+    state._state[CommandCodes.DECODE_MODE_STATUS_MCH] = None
+    state._state[CommandCodes.DECODE_MODE_STATUS_2CH] = bytes([0x01])
+    result = state.get_decode_mode()
+    assert result == DecodeMode2CH.STEREO
+
+
+async def test_get_decode_mode_both_none():
+    """When both 2CH and MCH return None, result is None."""
+    state = _make_state()
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([0x00, 0x00])
+    state._state[CommandCodes.DECODE_MODE_STATUS_2CH] = None
+    state._state[CommandCodes.DECODE_MODE_STATUS_MCH] = None
+    assert state.get_decode_mode() is None
+
+
+async def test_get_decode_mode_2ch_primary_succeeds():
+    """When 2CH mode has value, no fallback needed."""
+    from arcam.fmj import DecodeMode2CH
+
+    state = _make_state()
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([0x00, 0x00])
+    state._state[CommandCodes.DECODE_MODE_STATUS_2CH] = bytes([0x01])
+    state._state[CommandCodes.DECODE_MODE_STATUS_MCH] = bytes([0x06])
+    result = state.get_decode_mode()
+    assert result == DecodeMode2CH.STEREO
+
+
+# --- Tests for set_decode_mode fallback ---
+
+
+async def test_set_decode_mode_2ch_enum_always_uses_2ch():
+    """When DecodeMode2CH enum is passed, always use 2CH setter regardless of get_2ch()."""
+    from arcam.fmj import DecodeMode2CH
+
+    state = _make_state()
+    # MCH audio format (get_2ch() returns False)
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([0x02, 0x00])
+    await state.set_decode_mode(DecodeMode2CH.STEREO)
+    # Should still go through set_decode_mode_2ch (RC5 command)
+    state._client.request.assert_called_once()
+    args = state._client.request.call_args
+    assert args[0][1] == CommandCodes.SIMULATE_RC5_IR_COMMAND
+
+
+async def test_set_decode_mode_mch_enum_always_uses_mch():
+    """When DecodeModeMCH enum is passed, always use MCH setter regardless of get_2ch()."""
+    from arcam.fmj import DecodeModeMCH
+
+    state = _make_state()
+    # PCM audio format (get_2ch() returns True)
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([0x00, 0x1A])
+    await state.set_decode_mode(DecodeModeMCH.DOLBY_SURROUND)
+    # Should still go through set_decode_mode_mch (RC5 command)
+    state._client.request.assert_called_once()
+    args = state._client.request.call_args
+    assert args[0][1] == CommandCodes.SIMULATE_RC5_IR_COMMAND
+
+
+async def test_set_decode_mode_string_fallback_2ch_to_mch():
+    """When string mode not in 2CH enum, falls back to MCH."""
+    from arcam.fmj import DecodeModeMCH
+
+    state = _make_state()
+    # PCM audio (get_2ch() returns True), but mode only exists in MCH
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([0x00, 0x1A])
+    await state.set_decode_mode("MULTI_CHANNEL")
+    state._client.request.assert_called_once()
+
+
+async def test_set_decode_mode_string_fallback_mch_to_2ch():
+    """When string mode not in MCH enum, falls back to 2CH."""
+    from arcam.fmj import DecodeMode2CH
+
+    state = _make_state()
+    # Dolby audio (get_2ch() returns False), but mode only exists in 2CH
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([0x02, 0x00])
+    await state.set_decode_mode("DTS_NEURAL_X")
+    state._client.request.assert_called_once()
+
+
+async def test_set_decode_mode_mch_enum_not_rejected_when_2ch():
+    """DecodeModeMCH enum must NOT raise ValueError when get_2ch() is True."""
+    from arcam.fmj import DecodeModeMCH
+
+    state = _make_state()
+    # PCM = get_2ch() True, but passing MCH enum should work (AV40 scenario)
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([0x00, 0x1A])
+    # This previously raised ValueError - now it should work
+    await state.set_decode_mode(DecodeModeMCH.DOLBY_SURROUND)
+    state._client.request.assert_called_once()
+
+
 # --- Tests for update() polling new commands ---
 
 
