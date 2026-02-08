@@ -321,8 +321,18 @@ class State:
                     self._zn, CommandCodes.MUTE, bytes([0xF0])
                 )
                 self._state[CommandCodes.MUTE] = data
-            except Exception:
-                pass  # State will update on next poll
+            except (
+                ResponseException,
+                NotConnectedException,
+                UnsupportedZone,
+                TimeoutError,
+            ) as exc:
+                self._state[CommandCodes.MUTE] = None
+                _LOGGER.debug(
+                    "Mute state query failed after RC5 command for zone %s: %s",
+                    self._zn,
+                    exc,
+                )
 
     def get_source(self) -> SourceCodes | None:
         value = self._state.get(CommandCodes.CURRENT_SOURCE)
