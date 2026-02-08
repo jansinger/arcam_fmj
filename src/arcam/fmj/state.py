@@ -565,22 +565,27 @@ class State:
             if self._amxduet is None:
                 await _update_amxduet()
 
-            await asyncio.gather(
-                *[
-                    _update(CommandCodes.POWER),
-                    _update(CommandCodes.VOLUME),
-                    _update(CommandCodes.MUTE),
-                    _update(CommandCodes.CURRENT_SOURCE),
-                    _update(CommandCodes.MENU),
-                    _update(CommandCodes.DECODE_MODE_STATUS_2CH),
-                    _update(CommandCodes.DECODE_MODE_STATUS_MCH),
-                    _update(CommandCodes.INCOMING_VIDEO_PARAMETERS),
-                    _update(CommandCodes.INCOMING_AUDIO_FORMAT),
-                    _update(CommandCodes.INCOMING_AUDIO_SAMPLE_RATE),
-                    _update(CommandCodes.DAB_STATION),
-                    _update(CommandCodes.DLS_PDT_INFO),
-                    _update(CommandCodes.RDS_INFORMATION),
-                    _update(CommandCodes.TUNER_PRESET),
+            updates = [
+                _update(CommandCodes.POWER),
+                _update(CommandCodes.VOLUME),
+                _update(CommandCodes.MUTE),
+                _update(CommandCodes.CURRENT_SOURCE),
+                _update(CommandCodes.MENU),
+                _update(CommandCodes.DECODE_MODE_STATUS_2CH),
+                _update(CommandCodes.DECODE_MODE_STATUS_MCH),
+                _update(CommandCodes.INCOMING_VIDEO_PARAMETERS),
+                _update(CommandCodes.INCOMING_AUDIO_FORMAT),
+                _update(CommandCodes.INCOMING_AUDIO_SAMPLE_RATE),
+                _update(CommandCodes.DAB_STATION),
+                _update(CommandCodes.DLS_PDT_INFO),
+                _update(CommandCodes.RDS_INFORMATION),
+                _update(CommandCodes.TUNER_PRESET),
+                _update_presets(),
+            ]
+
+            # Audio controls only supported on Zone 1
+            if self._zn == 1:
+                updates.extend([
                     _update(CommandCodes.BASS_EQUALIZATION),
                     _update(CommandCodes.TREBLE_EQUALIZATION),
                     _update(CommandCodes.BALANCE),
@@ -589,9 +594,9 @@ class State:
                     _update(CommandCodes.DISPLAY_BRIGHTNESS),
                     _update(CommandCodes.ROOM_EQUALIZATION),
                     _update(CommandCodes.COMPRESSION),
-                    _update_presets(),
-                ]
-            )
+                ])
+
+            await asyncio.gather(*updates)
         else:
             if self._state:
                 self._state = dict()
