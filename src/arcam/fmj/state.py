@@ -93,6 +93,14 @@ class State:
             "RDS_INFORMATION": self.get_rds_information(),
             "TUNER_PRESET": self.get_tuner_preset(),
             "PRESET_DETAIL": self.get_preset_details(),
+            "BASS": self.get_bass(),
+            "TREBLE": self.get_treble(),
+            "BALANCE": self.get_balance(),
+            "SUBWOOFER_TRIM": self.get_subwoofer_trim(),
+            "LIPSYNC_DELAY": self.get_lipsync_delay(),
+            "DISPLAY_BRIGHTNESS": self.get_display_brightness(),
+            "ROOM_EQUALIZATION": self.get_room_eq(),
+            "COMPRESSION": self.get_compression(),
         }
 
     def __repr__(self) -> str:
@@ -365,6 +373,96 @@ class State:
                 self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command
             )
 
+    def get_bass(self) -> int | None:
+        value = self._state.get(CommandCodes.BASS_EQUALIZATION)
+        if value is None:
+            return None
+        return int.from_bytes(value, "big")
+
+    async def set_bass(self, bass: int) -> None:
+        await self._client.request(
+            self._zn, CommandCodes.BASS_EQUALIZATION, bytes([bass])
+        )
+
+    def get_treble(self) -> int | None:
+        value = self._state.get(CommandCodes.TREBLE_EQUALIZATION)
+        if value is None:
+            return None
+        return int.from_bytes(value, "big")
+
+    async def set_treble(self, treble: int) -> None:
+        await self._client.request(
+            self._zn, CommandCodes.TREBLE_EQUALIZATION, bytes([treble])
+        )
+
+    def get_balance(self) -> int | None:
+        value = self._state.get(CommandCodes.BALANCE)
+        if value is None:
+            return None
+        return int.from_bytes(value, "big")
+
+    async def set_balance(self, balance: int) -> None:
+        await self._client.request(
+            self._zn, CommandCodes.BALANCE, bytes([balance])
+        )
+
+    def get_subwoofer_trim(self) -> int | None:
+        value = self._state.get(CommandCodes.SUBWOOFER_TRIM)
+        if value is None:
+            return None
+        return int.from_bytes(value, "big")
+
+    async def set_subwoofer_trim(self, trim: int) -> None:
+        await self._client.request(
+            self._zn, CommandCodes.SUBWOOFER_TRIM, bytes([trim])
+        )
+
+    def get_lipsync_delay(self) -> int | None:
+        value = self._state.get(CommandCodes.LIPSYNC_DELAY)
+        if value is None:
+            return None
+        return int.from_bytes(value, "big")
+
+    async def set_lipsync_delay(self, delay: int) -> None:
+        await self._client.request(
+            self._zn, CommandCodes.LIPSYNC_DELAY, bytes([delay])
+        )
+
+    def get_display_brightness(self) -> int | None:
+        value = self._state.get(CommandCodes.DISPLAY_BRIGHTNESS)
+        if value is None:
+            return None
+        return int.from_bytes(value, "big")
+
+    async def set_display_brightness(self, brightness: int) -> None:
+        await self._client.request(
+            self._zn, CommandCodes.DISPLAY_BRIGHTNESS, bytes([brightness])
+        )
+
+    def get_room_eq(self) -> bool | None:
+        value = self._state.get(CommandCodes.ROOM_EQUALIZATION)
+        if value is None:
+            return None
+        return int.from_bytes(value, "big") != 0
+
+    async def set_room_eq(self, enabled: bool) -> None:
+        await self._client.request(
+            self._zn,
+            CommandCodes.ROOM_EQUALIZATION,
+            bytes([0x01 if enabled else 0x00]),
+        )
+
+    def get_compression(self) -> int | None:
+        value = self._state.get(CommandCodes.COMPRESSION)
+        if value is None:
+            return None
+        return int.from_bytes(value, "big")
+
+    async def set_compression(self, compression: int) -> None:
+        await self._client.request(
+            self._zn, CommandCodes.COMPRESSION, bytes([compression])
+        )
+
     def get_dab_station(self) -> str | None:
         value = self._state.get(CommandCodes.DAB_STATION)
         if value is None:
@@ -483,6 +581,14 @@ class State:
                     _update(CommandCodes.DLS_PDT_INFO),
                     _update(CommandCodes.RDS_INFORMATION),
                     _update(CommandCodes.TUNER_PRESET),
+                    _update(CommandCodes.BASS_EQUALIZATION),
+                    _update(CommandCodes.TREBLE_EQUALIZATION),
+                    _update(CommandCodes.BALANCE),
+                    _update(CommandCodes.SUBWOOFER_TRIM),
+                    _update(CommandCodes.LIPSYNC_DELAY),
+                    _update(CommandCodes.DISPLAY_BRIGHTNESS),
+                    _update(CommandCodes.ROOM_EQUALIZATION),
+                    _update(CommandCodes.COMPRESSION),
                     _update_presets(),
                 ]
             )
