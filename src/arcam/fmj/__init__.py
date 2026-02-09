@@ -482,8 +482,8 @@ class DecodeModeMCH(IntOrTypeEnum):
     STEREO_DOWNMIX = 0x01
     MULTI_CHANNEL = 0x02
 
-    # This is used for DTS_NEURAL_X on 860 series and HDA series
-    DOLBY_D_EX_OR_DTS_ES = 0x03
+    DTS_NEURAL_X = 0x03, APIVERSION_DTS_X_SERIES
+    DOLBY_D_EX_OR_DTS_ES = 0x03  # Alias for backward compat (450 series name)
 
     DOLBY_PLII_IIx_MOVIE = 0x04, APIVERSION_DOLBY_PL_SERIES
     DOLBY_PLII_IIx_MUSIC = 0x05, APIVERSION_DOLBY_PL_SERIES
@@ -599,8 +599,7 @@ RC5CODE_DECODE_MODE_MCH: dict[tuple[ApiModel, int], dict[DecodeModeMCH, bytes]] 
     (ApiModel.API860_SERIES, 1): {
         DecodeModeMCH.STEREO_DOWNMIX: bytes([16, 107]),
         DecodeModeMCH.MULTI_CHANNEL: bytes([16, 106]),
-        # We map to DTS_NEURAL_X
-        DecodeModeMCH.DOLBY_D_EX_OR_DTS_ES: bytes([16, 113]),
+        DecodeModeMCH.DTS_NEURAL_X: bytes([16, 113]),
         DecodeModeMCH.DOLBY_SURROUND: bytes([16, 110]),
         DecodeModeMCH.DTS_VIRTUAL_X: bytes([16, 115]),
     },
@@ -608,8 +607,7 @@ RC5CODE_DECODE_MODE_MCH: dict[tuple[ApiModel, int], dict[DecodeModeMCH, bytes]] 
     (ApiModel.APIHDA_SERIES, 1): {
         DecodeModeMCH.STEREO_DOWNMIX: bytes([16, 107]),
         DecodeModeMCH.MULTI_CHANNEL: bytes([16, 106]),
-        # We map to DTS_NEURAL_X
-        DecodeModeMCH.DOLBY_D_EX_OR_DTS_ES: bytes([16, 113]),
+        DecodeModeMCH.DTS_NEURAL_X: bytes([16, 113]),
         DecodeModeMCH.DOLBY_SURROUND: bytes([16, 110]),
         DecodeModeMCH.DOLBY_VIRTUAL_HEIGHT: bytes([16, 115]),
         DecodeModeMCH.AURO_NATIVE: bytes([16, 103]),

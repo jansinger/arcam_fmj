@@ -414,6 +414,81 @@ async def test_set_decode_mode_mch_enum_not_rejected_when_2ch():
     state._client.request.assert_called_once()
 
 
+# --- Tests for MCH DTS_NEURAL_X rename ---
+
+
+async def test_mch_0x03_is_dts_neural_x():
+    """MCH status byte 0x03 should parse as DTS_NEURAL_X (not DOLBY_D_EX_OR_DTS_ES)."""
+    from arcam.fmj import DecodeModeMCH
+
+    state = _make_state()
+    state._state[CommandCodes.DECODE_MODE_STATUS_MCH] = bytes([0x03])
+    result = state.get_decode_mode_mch()
+    assert result is not None
+    assert result.name == "DTS_NEURAL_X"
+    assert result == DecodeModeMCH.DTS_NEURAL_X
+
+
+async def test_mch_dolby_d_ex_alias_still_works():
+    """DOLBY_D_EX_OR_DTS_ES alias should still be accessible for backward compat."""
+    from arcam.fmj import DecodeModeMCH
+
+    assert DecodeModeMCH.DOLBY_D_EX_OR_DTS_ES == DecodeModeMCH.DTS_NEURAL_X
+    assert DecodeModeMCH.DOLBY_D_EX_OR_DTS_ES == 0x03
+
+
+# --- Tests for get_decode_modes() consistency with active mode ---
+
+
+async def test_get_decode_modes_returns_mch_when_mch_active():
+    """get_decode_modes() should return MCH modes when MCH decode mode is active."""
+    from arcam.fmj import DecodeModeMCH
+
+    state = _make_state()
+    # PCM audio (get_2ch()=True), but MCH mode active via fallback
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([0x00, 0x1A])
+    state._state[CommandCodes.DECODE_MODE_STATUS_2CH] = None
+    state._state[CommandCodes.DECODE_MODE_STATUS_MCH] = bytes([0x06])
+    modes = state.get_decode_modes()
+    assert modes is not None
+    # Should be MCH modes since MCH is active
+    assert any(isinstance(m, DecodeModeMCH) for m in modes)
+    assert any(m.name == "MULTI_CHANNEL" for m in modes)
+
+
+async def test_get_decode_modes_returns_2ch_when_2ch_active():
+    """get_decode_modes() should return 2CH modes when 2CH decode mode is active."""
+    from arcam.fmj import DecodeMode2CH
+
+    state = _make_state()
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([0x00, 0x00])
+    state._state[CommandCodes.DECODE_MODE_STATUS_2CH] = bytes([0x01])
+    modes = state.get_decode_modes()
+    assert modes is not None
+    assert any(isinstance(m, DecodeMode2CH) for m in modes)
+    assert any(m.name == "STEREO" for m in modes)
+
+
+async def test_get_decode_modes_current_mode_in_list():
+    """The current decode mode name must always appear in get_decode_modes() list."""
+    from arcam.fmj import DecodeModeMCH
+
+    state = _make_state()
+    # PCM audio + MCH DTS Neural:X active (the problematic case)
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([0x00, 0x1A])
+    state._state[CommandCodes.DECODE_MODE_STATUS_2CH] = None
+    state._state[CommandCodes.DECODE_MODE_STATUS_MCH] = bytes([0x03])
+    current = state.get_decode_mode()
+    modes = state.get_decode_modes()
+    assert current is not None
+    assert modes is not None
+    # Current mode name MUST be in the modes list
+    mode_names = [m.name for m in modes]
+    assert current.name in mode_names, (
+        f"Current mode '{current.name}' not in modes list {mode_names}"
+    )
+
+
 # --- Tests for update() polling new commands ---
 
 

@@ -267,6 +267,13 @@ class State:
     def get_decode_modes(
         self,
     ) -> list[DecodeModeMCH] | list[DecodeMode2CH] | None:
+        current = self.get_decode_mode()
+        if isinstance(current, DecodeModeMCH):
+            modes = RC5CODE_DECODE_MODE_MCH.get((self._api_model, self._zn))
+            return list(modes) if modes else None
+        elif isinstance(current, DecodeMode2CH):
+            modes = RC5CODE_DECODE_MODE_2CH.get((self._api_model, self._zn))
+            return list(modes) if modes else None
         if self.get_2ch():
             modes = RC5CODE_DECODE_MODE_2CH.get((self._api_model, self._zn))
             if not modes:
