@@ -239,18 +239,32 @@ class State:
             self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command
         )
 
+    _2CH_CONFIGS = frozenset({
+        IncomingAudioConfig.DUAL_MONO,
+        IncomingAudioConfig.MONO,
+        IncomingAudioConfig.STEREO_ONLY,
+        IncomingAudioConfig.STEREO_ONLY_LO_RO,
+        IncomingAudioConfig.DUAL_MONO_LFE,
+        IncomingAudioConfig.MONO_LFE,
+        IncomingAudioConfig.STEREO_LFE,
+        IncomingAudioConfig.STEREO_ONLY_LO_RO_LFE,
+    })
+
     def get_2ch(self) -> bool:
         """Return if source is 2 channel or not."""
-        audio_format, _ = self.get_incoming_audio_format()
-        return bool(
-            audio_format
-            in (
-                IncomingAudioFormat.PCM,
-                IncomingAudioFormat.ANALOGUE_DIRECT,
-                IncomingAudioFormat.UNDETECTED,
-                None,
-            )
-        )
+        audio_format, audio_config = self.get_incoming_audio_format()
+        if audio_format in (
+            IncomingAudioFormat.ANALOGUE_DIRECT,
+            IncomingAudioFormat.UNDETECTED,
+            None,
+        ):
+            return True
+        if audio_format == IncomingAudioFormat.PCM:
+            # PCM can be multichannel (e.g. 3/2.1) — check channel config
+            if audio_config is None:
+                return True
+            return audio_config in self._2CH_CONFIGS
+        return False
 
     def get_decode_mode(self) -> DecodeModeMCH | DecodeMode2CH | None:
         if self.get_2ch():
