@@ -1,11 +1,16 @@
-"""Client code"""
+"""Async TCP client for Arcam receiver protocol.
+
+Provides ClientBase (protocol logic, heartbeat, request/response matching)
+and Client (TCP connection management). Use ClientContext as an async
+context manager to handle the full connection lifecycle.
+"""
 
 import asyncio
 from asyncio.streams import StreamReader, StreamWriter
 import logging
 import time
 from contextlib import contextmanager
-from typing import Union, overload
+from typing import overload
 from collections.abc import Callable
 
 from . import (
@@ -35,6 +40,13 @@ _HEARTBEAT_TIMEOUT = _HEARTBEAT_INTERVAL + _HEARTBEAT_INTERVAL
 
 
 class ClientBase:
+    """Base protocol handler with heartbeat, listeners, and request/response matching.
+
+    Handles the binary protocol framing, sends periodic heartbeat pings,
+    dispatches incoming packets to registered listeners, and provides
+    request/response correlation with timeout and retry.
+    """
+
     def __init__(self) -> None:
         self._reader: StreamReader | None = None
         self._writer: StreamWriter | None = None
@@ -101,6 +113,7 @@ class ClientBase:
             except asyncio.CancelledError:
                 pass
             self._writer.close()
+            await self._writer.wait_closed()
 
     @property
     def connected(self) -> bool:
@@ -140,6 +153,7 @@ class ClientBase:
                 return await future
 
     async def send(self, zn: int, cc: CommandCodes, data: bytes) -> None:
+        """Send a command without waiting for a response (fire-and-forget)."""
         if not self._writer:
             raise NotConnectedException()
 
@@ -152,6 +166,10 @@ class ClientBase:
         await write_packet(writer, request)
 
     async def request(self, zn: int, cc: CommandCodes, data: bytes):
+        """Send a command and return the response data bytes.
+
+        Raises ResponseException subclasses for non-STATUS_UPDATE answers.
+        """
         if not self._writer:
             raise NotConnectedException()
 
@@ -171,6 +189,13 @@ class ClientBase:
 
 
 class Client(ClientBase):
+    """TCP client for connecting to an Arcam receiver.
+
+    Args:
+        host: Hostname or IP address of the receiver.
+        port: TCP port (default 50000).
+    """
+
     def __init__(self, host: str, port: int) -> None:
         super().__init__()
         self._host = host
@@ -185,6 +210,7 @@ class Client(ClientBase):
         return self._port
 
     async def start(self) -> None:
+        """Open TCP connection to the receiver."""
         if self._writer:
             raise ArcamException("Already started")
 
@@ -200,6 +226,7 @@ class Client(ClientBase):
         _LOGGER.info("Connected to %s:%d", self._host, self._port)
 
     async def stop(self) -> None:
+        """Close TCP connection to the receiver."""
         if self._writer:
             try:
                 _LOGGER.info("Disconnecting from %s:%d", self._host, self._port)
@@ -213,6 +240,14 @@ class Client(ClientBase):
 
 
 class ClientContext:
+    """Async context manager that starts, processes, and stops a Client.
+
+    Usage::
+
+        async with ClientContext(client) as c:
+            result = await c.request(1, CommandCodes.POWER, bytes([0xF0]))
+    """
+
     def __init__(self, client: Client):
         self._client = client
         self._task: asyncio.Task | None = None

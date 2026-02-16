@@ -1,4 +1,9 @@
-"""Fake server"""
+"""TCP server base for simulating Arcam receivers.
+
+Provides the Server class which accepts TCP connections and dispatches
+incoming commands to registered handlers. Used by DummyServer for
+development/testing.
+"""
 
 import asyncio
 import logging
@@ -20,6 +25,13 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class Server:
+    """Base TCP server that dispatches protocol commands to registered handlers.
+
+    Register handlers with register_handler() for specific (zone, command)
+    or (zone, command, data) tuples. Subclass and add handlers to simulate
+    specific device behavior.
+    """
+
     def __init__(self, host: str, port: int, model: str) -> None:
         self._server: asyncio.AbstractServer | None = None
         self._host = host
@@ -91,7 +103,7 @@ class Server:
         return response
 
     def register_handler(self, zn, cc, data, fun):
-        if data:
+        if data is not None:
             self._handlers[(zn, cc, data)] = fun
         else:
             self._handlers[(zn, cc)] = fun
@@ -102,17 +114,17 @@ class Server:
         return self
 
     async def stop(self):
-        if self._server:
-            _LOGGER.debug("Stopping server")
-            self._server.close()
-            await self._server.wait_closed()
-            self._server = None
-
         if self._tasks:
             _LOGGER.debug("Cancelling clients %s", self._tasks)
             for task in self._tasks:
                 task.cancel()
             await asyncio.wait(self._tasks)
+
+        if self._server:
+            _LOGGER.debug("Stopping server")
+            self._server.close()
+            await self._server.wait_closed()
+            self._server = None
 
 
 class ServerContext:

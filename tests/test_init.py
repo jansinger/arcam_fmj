@@ -5,9 +5,21 @@ from arcam.fmj import (
     APIVERSION_DAB_SERIES,
     APIVERSION_860_SERIES,
     APIVERSION_HDA_SERIES,
+    ApiModel,
+    DEVICE_PROFILES,
+    DeviceProfile,
+    detect_api_model,
     SA_SOURCE_MAPPING,
+    CommandInvalidAtThisTime,
+    CommandNotRecognised,
+    HdmiSettings,
+    InvalidDataLength,
+    InvalidPacket,
+    InvalidZoneException,
+    ParameterNotRecognised,
     PresetDetail,
     PresetType,
+    ResponseException,
     ResponsePacket,
     CommandPacket,
     AmxDuetResponse,
@@ -15,6 +27,8 @@ from arcam.fmj import (
     CommandCodes,
     AnswerCodes,
     SourceCodes,
+    VideoParameters,
+    ZoneSettings,
 )
 
 
@@ -392,3 +406,287 @@ def test_room_eq_names_from_bytes_partial():
     assert names.eq1 == "My EQ"
     assert names.eq2 == ""
     assert names.eq3 == ""
+
+
+# --- Tests for from_bytes boundary checks ---
+
+
+def test_preset_detail_from_bytes_too_short():
+    """Test PresetDetail.from_bytes raises InvalidPacket on short data."""
+    with pytest.raises(InvalidPacket):
+        PresetDetail.from_bytes(b"\x00")
+
+
+def test_preset_detail_from_bytes_empty():
+    """Test PresetDetail.from_bytes raises InvalidPacket on empty data."""
+    with pytest.raises(InvalidPacket):
+        PresetDetail.from_bytes(b"")
+
+
+def test_video_parameters_from_bytes_too_short():
+    """Test VideoParameters.from_bytes raises InvalidPacket on short data."""
+    with pytest.raises(InvalidPacket):
+        VideoParameters.from_bytes(b"\x00" * 7)
+
+
+def test_video_parameters_from_bytes_empty():
+    """Test VideoParameters.from_bytes raises InvalidPacket on empty data."""
+    with pytest.raises(InvalidPacket):
+        VideoParameters.from_bytes(b"")
+
+
+def test_hdmi_settings_from_bytes_too_short():
+    """Test HdmiSettings.from_bytes raises InvalidPacket on short data."""
+    with pytest.raises(InvalidPacket):
+        HdmiSettings.from_bytes(b"\x00" * 9)
+
+
+def test_hdmi_settings_from_bytes_empty():
+    """Test HdmiSettings.from_bytes raises InvalidPacket on empty data."""
+    with pytest.raises(InvalidPacket):
+        HdmiSettings.from_bytes(b"")
+
+
+def test_zone_settings_from_bytes_too_short():
+    """Test ZoneSettings.from_bytes raises InvalidPacket on short data."""
+    with pytest.raises(InvalidPacket):
+        ZoneSettings.from_bytes(b"\x00" * 5)
+
+
+def test_zone_settings_from_bytes_empty():
+    """Test ZoneSettings.from_bytes raises InvalidPacket on empty data."""
+    with pytest.raises(InvalidPacket):
+        ZoneSettings.from_bytes(b"")
+
+
+# --- Tests for VideoParameters happy-path ---
+
+
+def test_video_parameters_from_bytes_happy_path():
+    """Test VideoParameters.from_bytes with valid 8-byte data."""
+    # 1920x1080, 60Hz, interlaced, 16:9, HDR10
+    data = bytes([0x07, 0x80, 0x04, 0x38, 0x3C, 0x01, 0x02, 0x01])
+    params = VideoParameters.from_bytes(data)
+    assert params.horizontal_resolution == 1920
+    assert params.vertical_resolution == 1080
+    assert params.refresh_rate == 60
+    assert params.interlaced is True
+    assert params.aspect_ratio == 0x02  # ASPECT_16_9
+    assert params.colorspace == 0x01  # HDR10
+
+
+def test_video_parameters_from_bytes_progressive():
+    """Test VideoParameters.from_bytes with progressive scan."""
+    data = bytes([0x0F, 0x00, 0x08, 0x70, 0x3C, 0x00, 0x02, 0x00])
+    params = VideoParameters.from_bytes(data)
+    assert params.horizontal_resolution == 3840
+    assert params.vertical_resolution == 2160
+    assert params.refresh_rate == 60
+    assert params.interlaced is False
+
+
+def test_video_parameters_to_dict():
+    """Test VideoParameters.to_dict returns all fields."""
+    data = bytes([0x07, 0x80, 0x04, 0x38, 0x3C, 0x00, 0x02, 0x01])
+    params = VideoParameters.from_bytes(data)
+    d = params.to_dict()
+    assert d["horizontal_resolution"] == 1920
+    assert d["vertical_resolution"] == 1080
+    assert d["refresh_rate"] == 60
+    assert d["interlaced"] is False
+    assert len(d) == 6
+
+
+# --- Tests for CommandPacket round-trip ---
+
+
+def test_command_packet_round_trip():
+    """Test CommandPacket serialize → deserialize → verify equality."""
+    original = CommandPacket(1, CommandCodes.POWER, bytes([0xF0]))
+    serialized = original.to_bytes()
+    restored = CommandPacket.from_bytes(serialized)
+    assert restored.zn == original.zn
+    assert restored.cc == original.cc
+    assert restored.data == original.data
+
+
+def test_command_packet_round_trip_with_data():
+    """Test CommandPacket round-trip with multi-byte data."""
+    original = CommandPacket(2, CommandCodes.VOLUME, bytes([0x32]))
+    serialized = original.to_bytes()
+    restored = CommandPacket.from_bytes(serialized)
+    assert restored.zn == 2
+    assert restored.cc == CommandCodes.VOLUME
+    assert restored.data == bytes([0x32])
+
+
+def test_command_packet_round_trip_empty_data():
+    """Test CommandPacket round-trip with empty data."""
+    original = CommandPacket(1, CommandCodes.SOFTWARE_VERSION, bytes())
+    serialized = original.to_bytes()
+    restored = CommandPacket.from_bytes(serialized)
+    assert restored.zn == 1
+    assert restored.data == bytes()
+
+
+# --- Tests for DeviceProfile and detect_api_model ---
+
+
+@pytest.mark.parametrize(
+    "model, expected",
+    [
+        ("AVR30", ApiModel.APIHDA_SERIES),
+        ("AVR450", ApiModel.API450_SERIES),
+        ("AV860", ApiModel.API860_SERIES),
+        ("SA20", ApiModel.APISA_SERIES),
+        ("PA720", ApiModel.APIPA_SERIES),
+        ("ST60", ApiModel.APIST_SERIES),
+    ],
+)
+def test_detect_api_model_known(model, expected):
+    """detect_api_model returns correct ApiModel for known devices."""
+    assert detect_api_model(model) == expected
+
+
+def test_detect_api_model_unknown():
+    """detect_api_model returns None for unknown model names."""
+    assert detect_api_model("UNKNOWN_MODEL") is None
+
+
+def test_device_profiles_cover_all_api_models():
+    """Every ApiModel enum value has a corresponding DeviceProfile."""
+    for model in ApiModel:
+        assert model in DEVICE_PROFILES, f"Missing profile for {model}"
+
+
+def test_device_profiles_feature_flags_consistent():
+    """Feature flags in profiles match the legacy *_SUPPORTED sets."""
+    from arcam.fmj import POWER_WRITE_SUPPORTED, MUTE_WRITE_SUPPORTED, SOURCE_WRITE_SUPPORTED, VOLUME_STEP_SUPPORTED
+
+    for api_model, profile in DEVICE_PROFILES.items():
+        assert profile.power_writable == (api_model in POWER_WRITE_SUPPORTED), (
+            f"{api_model}: power_writable mismatch"
+        )
+        assert profile.mute_writable == (api_model in MUTE_WRITE_SUPPORTED), (
+            f"{api_model}: mute_writable mismatch"
+        )
+        assert profile.source_writable == (api_model in SOURCE_WRITE_SUPPORTED), (
+            f"{api_model}: source_writable mismatch"
+        )
+        assert profile.volume_steppable == (api_model in VOLUME_STEP_SUPPORTED), (
+            f"{api_model}: volume_steppable mismatch"
+        )
+
+
+# --- Tests for ResponseException.from_response() factory ---
+
+
+@pytest.mark.parametrize(
+    "ac, expected_type",
+    [
+        (AnswerCodes.ZONE_INVALID, InvalidZoneException),
+        (AnswerCodes.COMMAND_NOT_RECOGNISED, CommandNotRecognised),
+        (AnswerCodes.PARAMETER_NOT_RECOGNISED, ParameterNotRecognised),
+        (AnswerCodes.COMMAND_INVALID_AT_THIS_TIME, CommandInvalidAtThisTime),
+        (AnswerCodes.INVALID_DATA_LENGTH, InvalidDataLength),
+    ],
+)
+def test_response_exception_from_response(ac, expected_type):
+    """from_response returns correct exception subclass for each answer code."""
+    response = ResponsePacket(zn=1, cc=CommandCodes.POWER, ac=ac, data=b"")
+    exc = ResponseException.from_response(response)
+    assert isinstance(exc, expected_type)
+
+
+def test_response_exception_from_response_unknown_ac():
+    """from_response returns base ResponseException for unknown answer codes."""
+    # Use a raw int value that maps to an unusual AnswerCode
+    response = ResponsePacket(zn=1, cc=CommandCodes.POWER, ac=AnswerCodes.STATUS_UPDATE, data=b"")
+    exc = ResponseException.from_response(response)
+    assert type(exc) is ResponseException
+
+
+# --- Tests for SourceCodes.from_bytes / to_bytes error paths ---
+
+
+def test_source_codes_from_bytes_unknown_value():
+    """SourceCodes.from_bytes raises ValueError for unknown byte value."""
+    with pytest.raises(ValueError, match="Unknown source code"):
+        SourceCodes.from_bytes(bytes([0xFE]), ApiModel.APIHDA_SERIES, 1)
+
+
+def test_source_codes_to_bytes_unknown_model():
+    """SourceCodes.to_bytes raises ValueError for unknown model/zone."""
+    with pytest.raises(ValueError, match="Unknown source map"):
+        SourceCodes.CD.to_bytes(ApiModel.APIPA_SERIES, 99)
+
+
+def test_source_codes_from_bytes_unknown_model():
+    """SourceCodes.from_bytes raises ValueError for unknown model/zone."""
+    with pytest.raises(ValueError, match="Unknown source map"):
+        SourceCodes.from_bytes(bytes([0x01]), ApiModel.APIPA_SERIES, 99)
+
+
+def test_source_codes_to_bytes_unknown_source():
+    """SourceCodes.to_bytes raises ValueError for source not in model's mapping."""
+    # PHONO is not in HDA source mapping
+    with pytest.raises(ValueError, match="Unknown byte code"):
+        SourceCodes.PHONO.to_bytes(ApiModel.APIHDA_SERIES, 1)
+
+
+# --- Tests for PresetDetail.from_bytes unknown type ---
+
+
+def test_preset_detail_from_bytes_unknown_type():
+    """PresetDetail.from_bytes handles unknown preset type with str(data) fallback."""
+    # Preset type byte 0xFF is unknown
+    data = bytes([0x01, 0xFF, 0x41, 0x42])
+    detail = PresetDetail.from_bytes(data)
+    assert detail.index == 1
+    assert isinstance(detail.name, str)
+
+
+# --- Tests for ResponsePacket.from_bytes validation ---
+
+
+def test_response_packet_from_bytes_too_short():
+    """ResponsePacket.from_bytes raises InvalidPacket for short data."""
+    with pytest.raises(InvalidPacket, match="too short"):
+        ResponsePacket.from_bytes(b"\x21\x01\x00")
+
+
+def test_response_packet_from_bytes_invalid_length():
+    """ResponsePacket.from_bytes raises InvalidPacket for length mismatch."""
+    # Header says 5 bytes of data but only 1 present
+    with pytest.raises(InvalidPacket, match="Invalid length"):
+        ResponsePacket.from_bytes(b"\x21\x01\x00\x00\x05\x01\x0d")
+
+
+# --- Tests for CommandPacket.from_bytes validation ---
+
+
+def test_command_packet_from_bytes_too_short():
+    """CommandPacket.from_bytes raises InvalidPacket for short data."""
+    with pytest.raises(InvalidPacket, match="too short"):
+        CommandPacket.from_bytes(b"\x21\x01")
+
+
+def test_command_packet_from_bytes_invalid_length():
+    """CommandPacket.from_bytes raises InvalidPacket for length mismatch."""
+    with pytest.raises(InvalidPacket, match="Invalid length"):
+        CommandPacket.from_bytes(b"\x21\x01\x00\x05\x01\x0d")
+
+
+# --- Tests for AmxDuetRequest.from_bytes ---
+
+
+def test_amx_duet_request_from_bytes_valid():
+    """AmxDuetRequest.from_bytes parses valid AMX request."""
+    req = AmxDuetRequest.from_bytes(b"AMX\r")
+    assert isinstance(req, AmxDuetRequest)
+
+
+def test_amx_duet_request_from_bytes_invalid():
+    """AmxDuetRequest.from_bytes raises InvalidPacket for non-AMX data."""
+    with pytest.raises(InvalidPacket, match="not a amx"):
+        AmxDuetRequest.from_bytes(b"NOTAMX")

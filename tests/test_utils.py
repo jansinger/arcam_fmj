@@ -2,7 +2,9 @@
 
 import pytest
 
-from arcam.fmj.utils import async_retry
+import time
+
+from arcam.fmj.utils import async_retry, Throttle
 from arcam.fmj.utils import get_uniqueid_from_device_description
 from aiohttp import web
 
@@ -69,6 +71,37 @@ def _get_dd(unique_id, serial_no, udn):
 <microsoft:magicPacketWakeSupported>0</microsoft:magicPacketWakeSupported>
 <microsoft:magicPacketSendSupported>1</microsoft:magicPacketSendSupported></device></root>
 """
+
+
+async def test_throttle_no_delay_on_first_call():
+    """Test that Throttle.get() returns immediately on first call."""
+    throttle = Throttle(0.1)
+    start = time.monotonic()
+    await throttle.get()
+    elapsed = time.monotonic() - start
+    assert elapsed < 0.05
+
+
+async def test_throttle_delays_subsequent_calls():
+    """Test that Throttle.get() delays second call by configured delay."""
+    throttle = Throttle(0.1)
+    await throttle.get()
+    start = time.monotonic()
+    await throttle.get()
+    elapsed = time.monotonic() - start
+    assert elapsed >= 0.05  # Should be ~0.1s, allow some tolerance
+
+
+async def test_throttle_no_delay_after_waiting():
+    """Test that Throttle.get() doesn't delay if enough time has passed."""
+    throttle = Throttle(0.05)
+    await throttle.get()
+    import asyncio
+    await asyncio.sleep(0.1)
+    start = time.monotonic()
+    await throttle.get()
+    elapsed = time.monotonic() - start
+    assert elapsed < 0.05
 
 
 async def test_retry_fails():

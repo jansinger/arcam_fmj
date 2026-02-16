@@ -9,13 +9,93 @@ from typing import (
     Any,
     SupportsBytes,
     TypeVar,
-    Union,
     Literal,
     SupportsIndex,
 )
 from collections.abc import Iterable
 
 import attr
+
+__all__ = [
+    # Exceptions
+    "ArcamException",
+    "ConnectionFailed",
+    "NotConnectedException",
+    "UnsupportedZone",
+    "ResponseException",
+    "InvalidZoneException",
+    "CommandNotRecognised",
+    "ParameterNotRecognised",
+    "CommandInvalidAtThisTime",
+    "InvalidDataLength",
+    "InvalidPacket",
+    "NullPacket",
+    # API version sets
+    "APIVERSION_450_SERIES",
+    "APIVERSION_860_SERIES",
+    "APIVERSION_DAB_SERIES",
+    "APIVERSION_HDA_SERIES",
+    "APIVERSION_HDA_PREMIUM_SERIES",
+    "APIVERSION_HDA_MULTI_ZONE_SERIES",
+    "APIVERSION_SA_SERIES",
+    "APIVERSION_PA_SERIES",
+    "APIVERSION_ST_SERIES",
+    # Enums
+    "ApiModel",
+    "AnswerCodes",
+    "CommandCodes",
+    "SourceCodes",
+    "MenuCodes",
+    "DecodeMode2CH",
+    "DecodeModeMCH",
+    "IncomingVideoAspectRatio",
+    "IncomingVideoColorspace",
+    "IncomingAudioFormat",
+    "IncomingAudioConfig",
+    "NetworkPlaybackStatus",
+    "DolbyAudioMode",
+    "NowPlayingSampleRate",
+    "NowPlayingEncoder",
+    "BluetoothStatus",
+    "PresetType",
+    # Data classes
+    "PresetDetail",
+    "VideoParameters",
+    "NowPlayingInfo",
+    "HdmiSettings",
+    "ZoneSettings",
+    "RoomEqNames",
+    "ResponsePacket",
+    "CommandPacket",
+    "AmxDuetRequest",
+    "AmxDuetResponse",
+    # RC5 code mappings
+    "RC5CODE_SOURCE",
+    "RC5CODE_POWER",
+    "RC5CODE_MUTE",
+    "RC5CODE_VOLUME",
+    "RC5CODE_DECODE_MODE_2CH",
+    "RC5CODE_DECODE_MODE_MCH",
+    # Feature support sets
+    "POWER_WRITE_SUPPORTED",
+    "MUTE_WRITE_SUPPORTED",
+    "SOURCE_WRITE_SUPPORTED",
+    "VOLUME_STEP_SUPPORTED",
+    # Device profiles
+    "DeviceProfile",
+    "DEVICE_PROFILES",
+    "detect_api_model",
+    # Source mappings
+    "SOURCE_CODES",
+    "DEFAULT_SOURCE_MAPPING",
+    "HDA_SOURCE_MAPPING",
+    "SA_SOURCE_MAPPING",
+    "ST_SOURCE_MAPPING",
+    # Protocol I/O
+    "read_response",
+    "read_command",
+    "write_packet",
+]
 
 PROTOCOL_STR = b"\x21"
 PROTOCOL_ETR = b"\x0d"
@@ -43,7 +123,13 @@ class UnsupportedZone(ArcamException):
 
 
 class ResponseException(ArcamException):
-    def __init__(self, ac=None, zn=None, cc=None, data=None):
+    def __init__(
+        self,
+        ac: "AnswerCodes | None" = None,
+        zn: int | None = None,
+        cc: "CommandCodes | None" = None,
+        data: bytes | None = None,
+    ):
         self.ac = ac
         self.zn = zn
         self.cc = cc
@@ -68,31 +154,31 @@ class ResponseException(ArcamException):
 
 
 class InvalidZoneException(ResponseException):
-    def __init__(self, zn=None, cc=None, data=None):
+    def __init__(self, zn: int | None = None, cc: "CommandCodes | None" = None, data: bytes | None = None):
         super().__init__(ac=AnswerCodes.ZONE_INVALID, zn=zn, cc=cc, data=data)
 
 
 class CommandNotRecognised(ResponseException):
-    def __init__(self, zn=None, cc=None, data=None):
+    def __init__(self, zn: int | None = None, cc: "CommandCodes | None" = None, data: bytes | None = None):
         super().__init__(ac=AnswerCodes.COMMAND_NOT_RECOGNISED, zn=zn, cc=cc, data=data)
 
 
 class ParameterNotRecognised(ResponseException):
-    def __init__(self, zn=None, cc=None, data=None):
+    def __init__(self, zn: int | None = None, cc: "CommandCodes | None" = None, data: bytes | None = None):
         super().__init__(
             ac=AnswerCodes.PARAMETER_NOT_RECOGNISED, zn=zn, cc=cc, data=data
         )
 
 
 class CommandInvalidAtThisTime(ResponseException):
-    def __init__(self, zn=None, cc=None, data=None):
+    def __init__(self, zn: int | None = None, cc: "CommandCodes | None" = None, data: bytes | None = None):
         super().__init__(
             ac=AnswerCodes.COMMAND_INVALID_AT_THIS_TIME, zn=zn, cc=cc, data=data
         )
 
 
 class InvalidDataLength(ResponseException):
-    def __init__(self, zn=None, cc=None, data=None):
+    def __init__(self, zn: int | None = None, cc: "CommandCodes | None" = None, data: bytes | None = None):
         super().__init__(ac=AnswerCodes.INVALID_DATA_LENGTH, zn=zn, cc=cc, data=data)
 
 
@@ -512,6 +598,75 @@ SOURCE_WRITE_SUPPORTED = {
 VOLUME_STEP_SUPPORTED = {
     ApiModel.APIST_SERIES,
 }
+
+
+@attr.s(slots=True, frozen=True)
+class DeviceProfile:
+    """Capabilities and metadata for a device model family.
+
+    Consolidates per-series feature flags and model names into a single
+    data structure. Use ``detect_api_model()`` to look up the profile
+    for a given model name.
+    """
+
+    api_model: ApiModel = attr.ib()
+    models: frozenset[str] = attr.ib()
+    power_writable: bool = attr.ib(default=False)
+    mute_writable: bool = attr.ib(default=False)
+    source_writable: bool = attr.ib(default=False)
+    volume_steppable: bool = attr.ib(default=False)
+
+
+DEVICE_PROFILES: dict[ApiModel, DeviceProfile] = {
+    ApiModel.API450_SERIES: DeviceProfile(
+        api_model=ApiModel.API450_SERIES,
+        models=frozenset(APIVERSION_450_SERIES),
+    ),
+    ApiModel.API860_SERIES: DeviceProfile(
+        api_model=ApiModel.API860_SERIES,
+        models=frozenset(APIVERSION_860_SERIES),
+    ),
+    ApiModel.APISA_SERIES: DeviceProfile(
+        api_model=ApiModel.APISA_SERIES,
+        models=frozenset(APIVERSION_SA_SERIES),
+        power_writable=True,
+        mute_writable=True,
+        source_writable=True,
+    ),
+    ApiModel.APIHDA_SERIES: DeviceProfile(
+        api_model=ApiModel.APIHDA_SERIES,
+        models=frozenset(APIVERSION_HDA_SERIES),
+    ),
+    ApiModel.APIPA_SERIES: DeviceProfile(
+        api_model=ApiModel.APIPA_SERIES,
+        models=frozenset(APIVERSION_PA_SERIES),
+        power_writable=True,
+        mute_writable=True,
+    ),
+    ApiModel.APIST_SERIES: DeviceProfile(
+        api_model=ApiModel.APIST_SERIES,
+        models=frozenset(APIVERSION_ST_SERIES),
+        power_writable=True,
+        mute_writable=True,
+        volume_steppable=True,
+    ),
+}
+
+
+def detect_api_model(model_name: str) -> ApiModel | None:
+    """Detect the API model family from a device model name.
+
+    Args:
+        model_name: Device model string (e.g. 'AVR30', 'SA20').
+
+    Returns:
+        The matching ApiModel, or None if the model is unknown.
+    """
+    for profile in DEVICE_PROFILES.values():
+        if model_name in profile.models:
+            return profile.api_model
+    return None
+
 
 DEFAULT_SOURCE_MAPPING = {
     SourceCodes.FOLLOW_ZONE_1: bytes([0x00]),
@@ -1034,7 +1189,7 @@ class BluetoothStatus(IntOrTypeEnum):
 
 
 class PresetType(IntOrTypeEnum):
-    """List of possible audio configurations."""
+    """List of possible preset types (AM, FM, DAB)."""
 
     AM_FREQUENCY = 0x00
     FM_FREQUENCY = 0x01
@@ -1044,35 +1199,39 @@ class PresetType(IntOrTypeEnum):
 
 @attr.s
 class PresetDetail:
-    index = attr.ib(type=int)
-    type = attr.ib(type=Union[PresetType, int])
-    name = attr.ib(type=str)
+    index: int = attr.ib()
+    type: PresetType | int = attr.ib()
+    name: str = attr.ib()
 
     @staticmethod
     def from_bytes(data: bytes) -> "PresetDetail":
-        type = PresetType.from_int(data[1])
-        if type == PresetType.FM_RDS_NAME or type == PresetType.DAB:
+        if len(data) < 2:
+            raise InvalidPacket(f"PresetDetail data too short: {len(data)} bytes")
+        preset_type = PresetType.from_int(data[1])
+        if preset_type == PresetType.FM_RDS_NAME or preset_type == PresetType.DAB:
             name = data[2:].decode("utf8").rstrip()
-        elif type == PresetType.FM_FREQUENCY:
+        elif preset_type == PresetType.FM_FREQUENCY:
             name = f"{data[2]}.{data[3]:02} MHz"
-        elif type == PresetType.AM_FREQUENCY:
+        elif preset_type == PresetType.AM_FREQUENCY:
             name = f"{data[2]}{data[3]:02} kHz"
         else:
             name = str(data[2:])
-        return PresetDetail(data[0], type, name)
+        return PresetDetail(data[0], preset_type, name)
 
 
 @attr.s
 class VideoParameters:
-    horizontal_resolution = attr.ib(type=int)
-    vertical_resolution = attr.ib(type=int)
-    refresh_rate = attr.ib(type=int)
-    interlaced = attr.ib(type=bool)
-    aspect_ratio = attr.ib(type=IncomingVideoAspectRatio)
-    colorspace = attr.ib(type=IncomingVideoColorspace)
+    horizontal_resolution: int = attr.ib()
+    vertical_resolution: int = attr.ib()
+    refresh_rate: int = attr.ib()
+    interlaced: bool = attr.ib()
+    aspect_ratio: IncomingVideoAspectRatio = attr.ib()
+    colorspace: IncomingVideoColorspace = attr.ib()
 
     @staticmethod
     def from_bytes(data: bytes) -> "VideoParameters":
+        if len(data) < 8:
+            raise InvalidPacket(f"VideoParameters data too short: {len(data)} bytes")
         return VideoParameters(
             horizontal_resolution=int.from_bytes(data[0:2], "big"),
             vertical_resolution=int.from_bytes(data[2:4], "big"),
@@ -1143,6 +1302,8 @@ class HdmiSettings:
 
     @staticmethod
     def from_bytes(data: bytes) -> "HdmiSettings":
+        if len(data) < 10:
+            raise InvalidPacket(f"HdmiSettings data too short: {len(data)} bytes")
         return HdmiSettings(
             zone1_osd=data[0] != 0,
             zone1_output=data[1],
@@ -1170,6 +1331,8 @@ class ZoneSettings:
 
     @staticmethod
     def from_bytes(data: bytes) -> "ZoneSettings":
+        if len(data) < 6:
+            raise InvalidPacket(f"ZoneSettings data too short: {len(data)} bytes")
         return ZoneSettings(
             zone2_input=data[0],
             zone2_status=data[1],
@@ -1201,12 +1364,12 @@ class RoomEqNames:
 class ResponsePacket:
     """Represent a response from device."""
 
-    zn = attr.ib(type=int)
-    cc = attr.ib(type=int)
-    ac = attr.ib(type=int)
-    data = attr.ib(type=bytes)
+    zn: int = attr.ib()
+    cc: CommandCodes = attr.ib()
+    ac: AnswerCodes = attr.ib()
+    data: bytes = attr.ib()
 
-    def responds_to(self, request: Union["AmxDuetRequest", "CommandPacket"]):
+    def responds_to(self, request: "AmxDuetRequest | CommandPacket"):
         if not isinstance(request, CommandPacket):
             return False
         return self.zn == request.zn and self.cc == request.cc
@@ -1244,9 +1407,9 @@ class ResponsePacket:
 class CommandPacket:
     """Represent a command sent to device."""
 
-    zn = attr.ib(type=int)
-    cc = attr.ib(type=int)
-    data = attr.ib(type=bytes)
+    zn: int = attr.ib()
+    cc: CommandCodes = attr.ib()
+    data: bytes = attr.ib()
 
     def to_bytes(self):
         return bytes(
@@ -1280,7 +1443,7 @@ class AmxDuetRequest:
 
 @attr.s
 class AmxDuetResponse:
-    values = attr.ib(type=dict)
+    values: dict[str, str] = attr.ib()
 
     @property
     def device_class(self) -> str | None:
@@ -1338,7 +1501,7 @@ async def _read_delimited(reader: asyncio.StreamReader, header_len) -> bytes | N
 
             packet = bytes([*start, *header, *data_len, *data, *etr])
         elif start == b"\x01":
-            """Sometime the AMX header seem to be sent as \x01^AMX"""
+            # Sometimes the AMX header is sent as \x01^AMX
             header = await reader.readexactly(4)
             if header != b"^AMX":
                 raise InvalidPacket(f"Unexpected AMX header: {header!r}")

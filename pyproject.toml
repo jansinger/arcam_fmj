@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "arcam-fmj"
 version = "2.2.0"
@@ -14,7 +18,7 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "attrs>18.1",
+    "attrs>=22.1",
 ]
 license = "MIT"
 
@@ -22,15 +26,17 @@ license = "MIT"
 Homepage = "https://github.com/elupus/arcam_fmj"
 
 [project.optional-dependencies]
+discovery = [
+    "aiohttp>=3.8",
+    "defusedxml>=0.7.1",
+]
 tests = [
-    "aiohttp",
-    "coveralls",
-    "defusedxml",
+    "arcam-fmj[discovery]",
+    "pytest>=8.0",
     "pytest-aiohttp>=1.0.0",
     "pytest-asyncio>=1.0.0",
     "pytest-cov>=3.0.0",
-    "pytest-mock",
-    "pytest>3.6.4",
+    "pytest-mock>=3.10",
 ]
 
 [project.scripts]
