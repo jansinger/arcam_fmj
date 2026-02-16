@@ -30,6 +30,9 @@ discovery = [
     "aiohttp>=3.8",
     "defusedxml>=0.7.1",
 ]
+cli = [
+    "rich>=13.0",
+]
 tests = [
     "arcam-fmj[discovery]",
     "pytest>=8.0",

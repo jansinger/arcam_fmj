@@ -7,6 +7,7 @@ from . import CommandCodes, SourceCodes
 
 _LOGGER = logging.getLogger(__name__)
 from .client import Client, ClientContext
+from .display import print_state
 from .dummy import DummyServer
 from .server import ServerContext
 from .state import State
@@ -79,12 +80,12 @@ async def run_state(args):
 
         if args.monitor:
             async with state:
-                print(state)
+                print_state(state)
                 while client.connected:
                     await state.wait_changed()
-                    print(state)
+                    print_state(state)
         else:
-            print(state)
+            print_state(state)
 
 
 async def run_server(args):
