@@ -89,6 +89,7 @@ class State:
         self._state = dict()
         self._presets = dict()
         self._now_playing: dict[int, Any] = dict()
+        self._software_version: dict[int, tuple[int, int]] = dict()
         self._amxduet: AmxDuetResponse | None = None
         self._api_model = api_model
         self._changed: asyncio.Event = asyncio.Event()
@@ -155,6 +156,19 @@ class State:
             "ZONE_SETTINGS": self.get_zone_settings(),
             "ROOM_EQ_NAMES": self.get_room_eq_names(),
             "BLUETOOTH_STATUS": self.get_bluetooth_status(),
+            "HEADPHONES": self.get_headphones(),
+            "DIRECT_MODE": self.get_direct_mode(),
+            "ANALOG_DIGITAL": self.get_analog_digital(),
+            "SUB_STEREO_TRIM": self.get_sub_stereo_trim(),
+            "ZONE_1_OSD": self.get_zone1_osd(),
+            "VIDEO_OUTPUT_SWITCHING": self.get_video_output_switching(),
+            "IMAX_ENHANCED": self.get_imax_enhanced(),
+            "SOFTWARE_VERSION": self.get_software_version(),
+            "INPUT_NAME": self.get_input_name(),
+            "DISPLAY_INFO_TYPE": self.get_display_info_type(),
+            "TUNE": self.get_tune(),
+            "DAB_PROGRAM_TYPE": self.get_dab_program_type(),
+            "HEADPHONE_OVERRIDE": self.get_headphone_override(),
         }
 
     def __repr__(self) -> str:
@@ -618,6 +632,149 @@ class State:
         track = value[1:].decode("utf8").rstrip() if len(value) > 1 else ""
         return status, track
 
+    def get_headphones(self) -> bool | None:
+        """Return headphone connection state (True=connected, False=not), or None."""
+        value = self._state.get(CommandCodes.HEADPHONES)
+        if value is None:
+            return None
+        return int.from_bytes(value, "big") == 0x01
+
+    def get_direct_mode(self) -> bool | None:
+        """Return direct mode state (True=on, False=off), or None."""
+        value = self._state.get(CommandCodes.DIRECT_MODE_STATUS)
+        if value is None:
+            return None
+        return int.from_bytes(value, "big") == 0x01
+
+    def get_analog_digital(self) -> int | None:
+        """Return analog/digital selection (0=analog, 1=digital, 2=HDMI), or None."""
+        return self._get_int(CommandCodes.SELECT_ANALOG_DIGITAL)
+
+    async def set_analog_digital(self, mode: int) -> None:
+        """Set analog/digital selection (0=analog, 1=digital, 2=HDMI)."""
+        await self._set_int(CommandCodes.SELECT_ANALOG_DIGITAL, mode, 0, 2)
+
+    def get_sub_stereo_trim(self) -> int | None:
+        """Return sub stereo trim level (0-255), or None."""
+        return self._get_int(CommandCodes.SUB_STEREO_TRIM)
+
+    async def set_sub_stereo_trim(self, trim: int) -> None:
+        """Set sub stereo trim level (0-255)."""
+        await self._set_int(CommandCodes.SUB_STEREO_TRIM, trim)
+
+    def get_zone1_osd(self) -> bool | None:
+        """Return Zone 1 OSD state (True=on, False=off), or None.
+
+        Protocol uses inverted logic: 0x00=on, 0x01=off.
+        """
+        value = self._state.get(CommandCodes.ZONE_1_OSD_ON_OFF)
+        if value is None:
+            return None
+        return int.from_bytes(value, "big") == 0x00
+
+    async def set_zone1_osd(self, on: bool) -> None:
+        """Set Zone 1 OSD on/off. Sends 0xF1=on, 0xF2=off."""
+        cmd_byte = 0xF1 if on else 0xF2
+        await self._client.request(
+            self._zn, CommandCodes.ZONE_1_OSD_ON_OFF, bytes([cmd_byte])
+        )
+
+    def get_video_output_switching(self) -> int | None:
+        """Return video output switching (2=Out1, 3=Out2, 4=Out1&2), or None."""
+        return self._get_int(CommandCodes.VIDEO_OUTPUT_SWITCHING)
+
+    async def set_video_output_switching(self, output: int) -> None:
+        """Set video output switching (2=Out1, 3=Out2, 4=Out1&2)."""
+        await self._set_int(CommandCodes.VIDEO_OUTPUT_SWITCHING, output, 2, 4)
+
+    def get_imax_enhanced(self) -> int | None:
+        """Return IMAX Enhanced mode (0=off, 1=on, 2=auto), or None."""
+        return self._get_int(CommandCodes.VIDEO_INPUT_TYPE)
+
+    async def set_imax_enhanced(self, mode: int) -> None:
+        """Set IMAX Enhanced mode (0=off, 1=on, 2=auto).
+
+        Uses F-codes: 0→0xF3 (off), 1→0xF2 (on), 2→0xF1 (auto).
+        """
+        if not 0 <= mode <= 2:
+            raise ValueError(
+                f"IMAX_ENHANCED value {mode} out of range [0, 2]"
+            )
+        cmd_map = {0: 0xF3, 1: 0xF2, 2: 0xF1}
+        await self._client.request(
+            self._zn, CommandCodes.VIDEO_INPUT_TYPE, bytes([cmd_map[mode]])
+        )
+
+    def get_software_version(self) -> dict[int, tuple[int, int]]:
+        """Return software versions as {sub_query: (major, minor)}.
+
+        Sub-queries: 0xF0=RS232, 0xF1=Host, 0xF2=OSD, 0xF3=DSP, 0xF4=NET, 0xF5=IAP.
+        """
+        return self._software_version
+
+    def get_input_name(self) -> str | None:
+        """Return custom input name (up to 10 chars), or None."""
+        value = self._state.get(CommandCodes.INPUT_NAME)
+        if value is None:
+            return None
+        return value.decode("utf8").rstrip()
+
+    async def set_input_name(self, name: str) -> None:
+        """Set custom input name (max 10 ASCII characters)."""
+        if len(name) > 10:
+            raise ValueError(
+                f"Input name must be max 10 characters, got {len(name)}"
+            )
+        await self._client.request(
+            self._zn, CommandCodes.INPUT_NAME, name.encode("ascii")
+        )
+
+    def get_display_info_type(self) -> int | None:
+        """Return VFD display info type (source-dependent), or None."""
+        return self._get_int(CommandCodes.DISPLAY_INFORMATION_TYPE)
+
+    async def set_display_info_type(self, display_type: int) -> None:
+        """Set VFD display info type (source-dependent, 0x00-0x05)."""
+        await self._client.request(
+            self._zn, CommandCodes.DISPLAY_INFORMATION_TYPE, bytes([display_type])
+        )
+
+    def get_tune(self) -> tuple[int, int] | None:
+        """Return FM tuner frequency as (MHz, 10s_kHz), or None."""
+        value = self._state.get(CommandCodes.TUNE)
+        if value is None:
+            return None
+        return (value[0], value[1])
+
+    async def tune_up(self) -> None:
+        """Increment tuner frequency by one step (0.05 MHz)."""
+        await self._client.request(self._zn, CommandCodes.TUNE, bytes([0x01]))
+
+    async def tune_down(self) -> None:
+        """Decrement tuner frequency by one step (0.05 MHz)."""
+        await self._client.request(self._zn, CommandCodes.TUNE, bytes([0x00]))
+
+    def get_dab_program_type(self) -> str | None:
+        """Return DAB programme type/category (16-byte ASCII), or None."""
+        value = self._state.get(CommandCodes.DAB_PROGRAM_TYPE_CATEGORY)
+        if value is None:
+            return None
+        return value.decode("utf8").rstrip()
+
+    def get_headphone_override(self) -> bool | None:
+        """Return headphone override state (True=set, False=clear), or None."""
+        value = self._state.get(CommandCodes.HEADPHONES_OVERRIDE)
+        if value is None:
+            return None
+        return int.from_bytes(value, "big") == 0x01
+
+    async def set_headphone_override(self, override: bool) -> None:
+        """Set headphone override (True=speakers on, False=speakers muted if headphones)."""
+        await self._client.request(
+            self._zn, CommandCodes.HEADPHONES_OVERRIDE,
+            bytes([0x01 if override else 0x00])
+        )
+
     def get_dab_station(self) -> str | None:
         """Return current DAB station name, or None."""
         value = self._state.get(CommandCodes.DAB_STATION)
@@ -726,6 +883,27 @@ class State:
                     return
             self._now_playing = now_playing
 
+        async def _update_software_version() -> None:
+            versions: dict[int, tuple[int, int]] = {}
+            for sub_query in (0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5):
+                try:
+                    data = await self._client.request(
+                        self._zn, CommandCodes.SOFTWARE_VERSION, bytes([sub_query])
+                    )
+                    if len(data) >= 3:
+                        versions[data[0]] = (data[1], data[2])
+                except CommandInvalidAtThisTime:
+                    break
+                except ResponseException as e:
+                    _LOGGER.debug("Response error skipping software_version 0x%02X - %s", sub_query, e.ac)
+                except NotConnectedException:
+                    _LOGGER.debug("Not connected skipping software_version")
+                    return
+                except TimeoutError:
+                    _LOGGER.error("Timeout requesting software_version 0x%02X", sub_query)
+                    return
+            self._software_version = versions
+
         async def _update_amxduet() -> None:
             try:
                 data = await self._client.request_raw(AmxDuetRequest())
@@ -779,6 +957,19 @@ class State:
                     _update(CommandCodes.ROOM_EQ_NAMES),
                     _update(CommandCodes.VIDEO_OUTPUT_FRAME_RATE),
                     _update_now_playing(),
+                    _update(CommandCodes.HEADPHONES),
+                    _update(CommandCodes.DIRECT_MODE_STATUS),
+                    _update(CommandCodes.SELECT_ANALOG_DIGITAL),
+                    _update(CommandCodes.SUB_STEREO_TRIM),
+                    _update(CommandCodes.ZONE_1_OSD_ON_OFF),
+                    _update(CommandCodes.VIDEO_OUTPUT_SWITCHING),
+                    _update(CommandCodes.VIDEO_INPUT_TYPE),
+                    _update_software_version(),
+                    _update(CommandCodes.INPUT_NAME),
+                    _update(CommandCodes.DISPLAY_INFORMATION_TYPE),
+                    _update(CommandCodes.TUNE),
+                    _update(CommandCodes.DAB_PROGRAM_TYPE_CATEGORY),
+                    _update(CommandCodes.HEADPHONES_OVERRIDE),
                 ]
                 await asyncio.gather(*updates)
             else:
@@ -804,3 +995,5 @@ class State:
                 self._state = dict()
             if self._now_playing:
                 self._now_playing = dict()
+            if self._software_version:
+                self._software_version = dict()

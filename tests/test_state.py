@@ -1385,3 +1385,363 @@ async def test_update_amxduet_response_exception(make_state):
     state._client.request_raw.side_effect = CommandNotRecognised()
     state._client.request.side_effect = CommandNotRecognised()
     await state.update()  # Should not raise
+
+
+# --- Tests for get_headphones ---
+
+
+async def test_get_headphones_none(make_state):
+    """Returns None when no state."""
+    state = make_state()
+    assert state.get_headphones() is None
+
+
+@pytest.mark.parametrize("raw, expected", [(0x00, False), (0x01, True)])
+async def test_get_headphones_values(make_state, raw, expected):
+    """0x00=not connected, 0x01=connected."""
+    state = make_state()
+    state._state[CommandCodes.HEADPHONES] = bytes([raw])
+    assert state.get_headphones() is expected
+
+
+# --- Tests for get_direct_mode ---
+
+
+async def test_get_direct_mode_none(make_state):
+    """Returns None when no state."""
+    state = make_state()
+    assert state.get_direct_mode() is None
+
+
+@pytest.mark.parametrize("raw, expected", [(0x00, False), (0x01, True)])
+async def test_get_direct_mode_values(make_state, raw, expected):
+    """0x00=off, 0x01=on."""
+    state = make_state()
+    state._state[CommandCodes.DIRECT_MODE_STATUS] = bytes([raw])
+    assert state.get_direct_mode() is expected
+
+
+# --- Tests for get/set_analog_digital ---
+
+
+async def test_get_analog_digital_none(make_state):
+    """Returns None when no state."""
+    state = make_state()
+    assert state.get_analog_digital() is None
+
+
+@pytest.mark.parametrize("raw, expected", [(0x00, 0), (0x01, 1), (0x02, 2)])
+async def test_get_analog_digital_values(make_state, raw, expected):
+    """0x00=analog, 0x01=digital, 0x02=HDMI."""
+    state = make_state()
+    state._state[CommandCodes.SELECT_ANALOG_DIGITAL] = bytes([raw])
+    assert state.get_analog_digital() == expected
+
+
+async def test_set_analog_digital(make_state):
+    """Sends direct byte value."""
+    state = make_state()
+    await state.set_analog_digital(1)
+    state._client.request.assert_called_once_with(
+        state._zn, CommandCodes.SELECT_ANALOG_DIGITAL, bytes([1])
+    )
+
+
+async def test_set_analog_digital_rejects_out_of_range(make_state):
+    """Must be 0-2."""
+    state = make_state()
+    with pytest.raises(ValueError, match="SELECT_ANALOG_DIGITAL"):
+        await state.set_analog_digital(3)
+
+
+# --- Tests for get/set_sub_stereo_trim ---
+
+
+async def test_get_sub_stereo_trim_none(make_state):
+    """Returns None when no state."""
+    state = make_state()
+    assert state.get_sub_stereo_trim() is None
+
+
+async def test_get_sub_stereo_trim_value(make_state):
+    """Parses byte as int."""
+    state = make_state()
+    state._state[CommandCodes.SUB_STEREO_TRIM] = bytes([0x83])
+    assert state.get_sub_stereo_trim() == 0x83
+
+
+async def test_set_sub_stereo_trim(make_state):
+    """Sends direct byte value."""
+    state = make_state()
+    await state.set_sub_stereo_trim(0x83)
+    state._client.request.assert_called_once_with(
+        state._zn, CommandCodes.SUB_STEREO_TRIM, bytes([0x83])
+    )
+
+
+# --- Tests for get/set_zone1_osd ---
+
+
+async def test_get_zone1_osd_none(make_state):
+    """Returns None when no state."""
+    state = make_state()
+    assert state.get_zone1_osd() is None
+
+
+@pytest.mark.parametrize("raw, expected", [(0x00, True), (0x01, False)])
+async def test_get_zone1_osd_values(make_state, raw, expected):
+    """0x00=on (True), 0x01=off (False) — inverted per protocol."""
+    state = make_state()
+    state._state[CommandCodes.ZONE_1_OSD_ON_OFF] = bytes([raw])
+    assert state.get_zone1_osd() is expected
+
+
+async def test_set_zone1_osd_on(make_state):
+    """Setting True sends 0xF1 (on)."""
+    state = make_state()
+    await state.set_zone1_osd(True)
+    state._client.request.assert_called_once_with(
+        state._zn, CommandCodes.ZONE_1_OSD_ON_OFF, bytes([0xF1])
+    )
+
+
+async def test_set_zone1_osd_off(make_state):
+    """Setting False sends 0xF2 (off)."""
+    state = make_state()
+    await state.set_zone1_osd(False)
+    state._client.request.assert_called_once_with(
+        state._zn, CommandCodes.ZONE_1_OSD_ON_OFF, bytes([0xF2])
+    )
+
+
+# --- Tests for get/set_video_output_switching ---
+
+
+async def test_get_video_output_switching_none(make_state):
+    """Returns None when no state."""
+    state = make_state()
+    assert state.get_video_output_switching() is None
+
+
+@pytest.mark.parametrize("raw, expected", [(0x02, 2), (0x03, 3), (0x04, 4)])
+async def test_get_video_output_switching_values(make_state, raw, expected):
+    """0x02=Out1, 0x03=Out2, 0x04=Out1&2."""
+    state = make_state()
+    state._state[CommandCodes.VIDEO_OUTPUT_SWITCHING] = bytes([raw])
+    assert state.get_video_output_switching() == expected
+
+
+async def test_set_video_output_switching(make_state):
+    """Sends direct byte value."""
+    state = make_state()
+    await state.set_video_output_switching(4)
+    state._client.request.assert_called_once_with(
+        state._zn, CommandCodes.VIDEO_OUTPUT_SWITCHING, bytes([4])
+    )
+
+
+async def test_set_video_output_switching_rejects_out_of_range(make_state):
+    """Must be 2-4."""
+    state = make_state()
+    with pytest.raises(ValueError, match="VIDEO_OUTPUT_SWITCHING"):
+        await state.set_video_output_switching(1)
+    with pytest.raises(ValueError, match="VIDEO_OUTPUT_SWITCHING"):
+        await state.set_video_output_switching(5)
+
+
+# --- Tests for get/set_imax_enhanced ---
+
+
+async def test_get_imax_enhanced_none(make_state):
+    """Returns None when no state."""
+    state = make_state()
+    assert state.get_imax_enhanced() is None
+
+
+@pytest.mark.parametrize("raw, expected", [(0x00, 0), (0x01, 1), (0x02, 2)])
+async def test_get_imax_enhanced_values(make_state, raw, expected):
+    """0x00=off, 0x01=on, 0x02=auto."""
+    state = make_state()
+    state._state[CommandCodes.VIDEO_INPUT_TYPE] = bytes([raw])
+    assert state.get_imax_enhanced() == expected
+
+
+@pytest.mark.parametrize("mode, cmd_byte", [(0, 0xF3), (1, 0xF2), (2, 0xF1)])
+async def test_set_imax_enhanced(make_state, mode, cmd_byte):
+    """0=off→0xF3, 1=on→0xF2, 2=auto→0xF1."""
+    state = make_state()
+    await state.set_imax_enhanced(mode)
+    state._client.request.assert_called_once_with(
+        state._zn, CommandCodes.VIDEO_INPUT_TYPE, bytes([cmd_byte])
+    )
+
+
+async def test_set_imax_enhanced_rejects_out_of_range(make_state):
+    """Must be 0-2."""
+    state = make_state()
+    with pytest.raises(ValueError, match="IMAX"):
+        await state.set_imax_enhanced(3)
+
+
+# --- Tests for get_software_version ---
+
+
+async def test_get_software_version_none(make_state):
+    """Returns empty dict when no versions queried yet."""
+    state = make_state()
+    assert state.get_software_version() == {}
+
+
+async def test_get_software_version_after_update(make_state):
+    """update() populates version dict with sub-query results."""
+    state = make_state()
+    # Simulate populated _software_version dict
+    state._software_version = {
+        0xF0: (1, 4),
+        0xF1: (2, 0),
+    }
+    result = state.get_software_version()
+    assert result == {0xF0: (1, 4), 0xF1: (2, 0)}
+
+
+# --- Tests for get/set_input_name ---
+
+
+async def test_get_input_name_none(make_state):
+    """Returns None when no state."""
+    state = make_state()
+    assert state.get_input_name() is None
+
+
+async def test_get_input_name_value(make_state):
+    """Parses ASCII string, strips trailing spaces."""
+    state = make_state()
+    state._state[CommandCodes.INPUT_NAME] = b"BDP300    "
+    assert state.get_input_name() == "BDP300"
+
+
+async def test_set_input_name(make_state):
+    """Sends ASCII-encoded name."""
+    state = make_state()
+    await state.set_input_name("BDP300")
+    state._client.request.assert_called_once_with(
+        state._zn, CommandCodes.INPUT_NAME, b"BDP300"
+    )
+
+
+async def test_set_input_name_rejects_too_long(make_state):
+    """Name must be max 10 characters."""
+    state = make_state()
+    with pytest.raises(ValueError, match="10"):
+        await state.set_input_name("12345678901")
+
+
+# --- Tests for get/set_display_info_type ---
+
+
+async def test_get_display_info_type_none(make_state):
+    """Returns None when no state."""
+    state = make_state()
+    assert state.get_display_info_type() is None
+
+
+@pytest.mark.parametrize("raw, expected", [(0x00, 0), (0x01, 1), (0x03, 3)])
+async def test_get_display_info_type_values(make_state, raw, expected):
+    """Returns int value."""
+    state = make_state()
+    state._state[CommandCodes.DISPLAY_INFORMATION_TYPE] = bytes([raw])
+    assert state.get_display_info_type() == expected
+
+
+async def test_set_display_info_type(make_state):
+    """Sends direct byte value."""
+    state = make_state()
+    await state.set_display_info_type(2)
+    state._client.request.assert_called_once_with(
+        state._zn, CommandCodes.DISPLAY_INFORMATION_TYPE, bytes([2])
+    )
+
+
+# --- Tests for get_tune / tune_up / tune_down ---
+
+
+async def test_get_tune_none(make_state):
+    """Returns None when no state."""
+    state = make_state()
+    assert state.get_tune() is None
+
+
+async def test_get_tune_value(make_state):
+    """Returns (MHz, 10s_kHz) tuple from 2-byte response."""
+    state = make_state()
+    state._state[CommandCodes.TUNE] = bytes([85, 5])  # 85.05 MHz
+    assert state.get_tune() == (85, 5)
+
+
+async def test_tune_up(make_state):
+    """Sends 0x01 to increment frequency."""
+    state = make_state()
+    await state.tune_up()
+    state._client.request.assert_called_once_with(
+        state._zn, CommandCodes.TUNE, bytes([0x01])
+    )
+
+
+async def test_tune_down(make_state):
+    """Sends 0x00 to decrement frequency."""
+    state = make_state()
+    await state.tune_down()
+    state._client.request.assert_called_once_with(
+        state._zn, CommandCodes.TUNE, bytes([0x00])
+    )
+
+
+# --- Tests for get_dab_program_type ---
+
+
+async def test_get_dab_program_type_none(make_state):
+    """Returns None when no state."""
+    state = make_state()
+    assert state.get_dab_program_type() is None
+
+
+async def test_get_dab_program_type_value(make_state):
+    """Parses ASCII 16-byte string, strips trailing spaces."""
+    state = make_state()
+    state._state[CommandCodes.DAB_PROGRAM_TYPE_CATEGORY] = b"POP MUSIC       "
+    assert state.get_dab_program_type() == "POP MUSIC"
+
+
+# --- Tests for set_headphone_override ---
+
+
+async def test_get_headphone_override_none(make_state):
+    """Returns None when no state."""
+    state = make_state()
+    assert state.get_headphone_override() is None
+
+
+@pytest.mark.parametrize("raw, expected", [(0x00, False), (0x01, True)])
+async def test_get_headphone_override_values(make_state, raw, expected):
+    """0x00=clear (False), 0x01=set/override (True)."""
+    state = make_state()
+    state._state[CommandCodes.HEADPHONES_OVERRIDE] = bytes([raw])
+    assert state.get_headphone_override() is expected
+
+
+async def test_set_headphone_override(make_state):
+    """True sends 0x01, False sends 0x00."""
+    state = make_state()
+    await state.set_headphone_override(True)
+    state._client.request.assert_called_once_with(
+        state._zn, CommandCodes.HEADPHONES_OVERRIDE, bytes([0x01])
+    )
+
+
+async def test_set_headphone_override_clear(make_state):
+    """False sends 0x00 (clear override)."""
+    state = make_state()
+    await state.set_headphone_override(False)
+    state._client.request.assert_called_once_with(
+        state._zn, CommandCodes.HEADPHONES_OVERRIDE, bytes([0x00])
+    )
