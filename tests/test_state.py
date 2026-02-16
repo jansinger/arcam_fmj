@@ -1065,17 +1065,17 @@ async def test_set_display_brightness_rejects_out_of_range(make_state):
 
 
 async def test_set_room_eq_rejects_out_of_range(make_state):
-    """Room EQ preset must be 0-4."""
+    """Room EQ preset must be 0-3 (0x04 'not calculated' is response-only)."""
     state = make_state()
     with pytest.raises(ValueError, match="ROOM_EQUALIZATION"):
-        await state.set_room_eq(5)
+        await state.set_room_eq(4)
 
 
 async def test_set_compression_rejects_out_of_range(make_state):
-    """Compression must be 0-3."""
+    """Compression must be 0-2 (off/medium/high per protocol)."""
     state = make_state()
     with pytest.raises(ValueError, match="COMPRESSION"):
-        await state.set_compression(4)
+        await state.set_compression(3)
 
 
 async def test_set_bass_rejects_out_of_byte_range(make_state):

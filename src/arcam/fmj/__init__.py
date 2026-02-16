@@ -701,7 +701,7 @@ HDA_SOURCE_MAPPING = {
     SourceCodes.FM: bytes([0x0B]),
     SourceCodes.DAB: bytes([0x0C]),
     SourceCodes.NET: bytes([0x0E]),
-    SourceCodes.USB: bytes([0x0F]),
+    SourceCodes.USB: bytes([0x0F]),  # Not in official protocol doc (SH289E), but present on some HDA devices
     SourceCodes.STB: bytes([0x10]),
     SourceCodes.GAME: bytes([0x11]),
     SourceCodes.BT: bytes([0x12]),

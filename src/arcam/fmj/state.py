@@ -551,16 +551,16 @@ class State:
         return self._get_int(CommandCodes.ROOM_EQUALIZATION)
 
     async def set_room_eq(self, preset: int) -> None:
-        """Set Room EQ preset (0=off, 1-3=EQ1-3, 4=not calculated)."""
-        await self._set_int(CommandCodes.ROOM_EQUALIZATION, preset, 0, 4)
+        """Set Room EQ preset (0=off, 1=EQ1, 2=EQ2, 3=EQ3)."""
+        await self._set_int(CommandCodes.ROOM_EQUALIZATION, preset, 0, 3)
 
     def get_compression(self) -> int | None:
         """Return dynamic range compression mode (0-3), or None."""
         return self._get_int(CommandCodes.COMPRESSION)
 
     async def set_compression(self, compression: int) -> None:
-        """Set dynamic range compression mode (0-3)."""
-        await self._set_int(CommandCodes.COMPRESSION, compression, 0, 3)
+        """Set dynamic range compression mode (0=off, 1=medium, 2=high)."""
+        await self._set_int(CommandCodes.COMPRESSION, compression, 0, 2)
 
     def get_network_playback_status(self) -> NetworkPlaybackStatus | None:
         """Return network playback status (stopped/playing/paused), or None."""

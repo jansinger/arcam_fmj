@@ -1140,8 +1140,8 @@ Request the incoming audio format.
 | 0x14 | Stereo + Surround L & R + LFE |
 | 0x15 | Stereo + Surround L & R + mono Surround Back + LFE |
 | 0x16 | Stereo + Surround L & R + Surround Back L & R + LFE |
-| 0x17 | Stereo + Surround L & R + LFE |
-| 0x18 | Stereo + Centre + LFE plus matrix information for surr. back L&R |
+| 0x17 | Stereo + Surround L & R containing matrix info for surr. back L&R + LFE |
+| 0x18 | Stereo + Centre + LFE |
 | 0x19 | Stereo + Centre + single surround + LFE |
 | 0x1A | Stereo + Centre + Surround L & R + LFE (Standard 5.1) |
 | 0x1B | Stereo + Centre + Surr. L & R + mono Surr. Back + LFE (6.1, e.g. DTS ES Discrete) |
