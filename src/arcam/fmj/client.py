@@ -6,12 +6,13 @@ context manager to handle the full connection lifecycle.
 """
 
 import asyncio
-from asyncio.streams import StreamReader, StreamWriter
+import contextlib
 import logging
 import time
+from asyncio.streams import StreamReader, StreamWriter
+from collections.abc import Callable
 from contextlib import contextmanager
 from typing import overload
-from collections.abc import Callable
 
 from . import (
     AmxDuetRequest,
@@ -74,9 +75,7 @@ class ClientBase:
                 await asyncio.sleep(delay)
             else:
                 _LOGGER.debug("Sending ping")
-                await write_packet(
-                    writer, CommandPacket(1, CommandCodes.POWER, bytes([0xF0]))
-                )
+                await write_packet(writer, CommandPacket(1, CommandCodes.POWER, bytes([0xF0])))
                 self._timestamp = time.monotonic()
 
     async def _process_data(self, reader: StreamReader):
@@ -100,18 +99,18 @@ class ClientBase:
             self._reader = None
 
     async def process(self) -> None:
-        assert self._writer, "Writer missing"
-        assert self._reader, "Reader missing"
+        if not self._writer:
+            raise NotConnectedException("Writer missing")
+        if not self._reader:
+            raise NotConnectedException("Reader missing")
 
         _process_heartbeat = asyncio.create_task(self._process_heartbeat(self._writer))
         try:
             await self._process_data(self._reader)
         finally:
             _process_heartbeat.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await _process_heartbeat
-            except asyncio.CancelledError:
-                pass
             self._writer.close()
             await self._writer.wait_closed()
 
@@ -146,9 +145,8 @@ class ClientBase:
         future: asyncio.Future[ResponsePacket | AmxDuetResponse] = asyncio.Future()
 
         def listen(response: ResponsePacket | AmxDuetResponse):
-            if response.responds_to(request):
-                if not (future.cancelled() or future.done()):
-                    future.set_result(response)
+            if response.responds_to(request) and not (future.cancelled() or future.done()):
+                future.set_result(response)
 
         await self._throttle.get()
 
@@ -189,9 +187,7 @@ class ClientBase:
             await self.send(zn, cc, data)
             return
 
-        response = await self.request_raw(
-            CommandPacket(zn, cc, data), timeout=timeout
-        )
+        response = await self.request_raw(CommandPacket(zn, cc, data), timeout=timeout)
 
         if response.ac == AnswerCodes.STATUS_UPDATE:
             return response.data
@@ -227,9 +223,7 @@ class Client(ClientBase):
 
         _LOGGER.debug("Connecting to %s:%d", self._host, self._port)
         try:
-            self._reader, self._writer = await asyncio.open_connection(
-                self._host, self._port
-            )
+            self._reader, self._writer = await asyncio.open_connection(self._host, self._port)
         except ConnectionError as exception:
             raise ConnectionFailed() from exception
         except OSError as exception:
@@ -271,8 +265,6 @@ class ClientContext:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
         await self._client.stop()

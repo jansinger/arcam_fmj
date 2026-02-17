@@ -45,9 +45,42 @@ tests = [
 [project.scripts]
 arcam-fmj = "arcam.fmj.console:main"
 
-[tool.isort]
-not_skip = "__init__.py"
-multi_line_output = 3
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/test_utils.py" = ["E501"]  # XML test fixtures contain long lines
+
+[tool.ruff.lint.isort]
+known-first-party = ["arcam"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["defusedxml.*", "aiohttp.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["arcam"]
+
+[tool.coverage.report]
+fail_under = 85

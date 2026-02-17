@@ -1,25 +1,16 @@
 """Tests for the display module (human-friendly state output)."""
 
-import io
 from unittest.mock import patch
-
-import pytest
 
 from arcam.fmj import (
     AmxDuetResponse,
-    BluetoothStatus,
     CommandCodes,
     DolbyAudioMode,
-    IncomingAudioConfig,
-    IncomingAudioFormat,
-    MenuCodes,
     NetworkPlaybackStatus,
     NowPlayingEncoder,
     NowPlayingSampleRate,
-    SourceCodes,
 )
 from arcam.fmj.display import _fmt, print_state
-
 
 # --- _fmt helper ---
 
@@ -57,9 +48,7 @@ def test_fmt_string():
 
 def _populate_state(state):
     """Set up a state with representative data for all sections."""
-    state._amxduet = AmxDuetResponse(
-        values={"Device-Model": "AVR30", "Device-Revision": "1.2"}
-    )
+    state._amxduet = AmxDuetResponse(values={"Device-Model": "AVR30", "Device-Revision": "1.2"})
     state._state[CommandCodes.POWER] = bytes([0x01])
     state._state[CommandCodes.VOLUME] = bytes([42])
     state._state[CommandCodes.CURRENT_SOURCE] = bytes([0x08])  # NET
@@ -77,7 +66,7 @@ def _populate_state(state):
     state._state[CommandCodes.SUBWOOFER_TRIM] = bytes([0x0A])
     state._state[CommandCodes.LIPSYNC_DELAY] = bytes([0x28])  # 40ms
     state._state[CommandCodes.INCOMING_VIDEO_PARAMETERS] = (
-        b"\x07\x80\x04\x38\x3C\x00\x02\x00"  # 1920x1080@60Hz progressive 16:9 normal
+        b"\x07\x80\x04\x38\x3c\x00\x02\x00"  # 1920x1080@60Hz progressive 16:9 normal
     )
     state._state[CommandCodes.DAB_STATION] = b"BBC Radio 1"
     state._state[CommandCodes.TUNER_PRESET] = bytes([0x03])
@@ -89,12 +78,30 @@ def _populate_state(state):
         + b"Bedroom\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
         + b"\x00" * 20
     )
-    state._state[CommandCodes.HDMI_SETTINGS] = bytes([
-        0x01, 0x01, 0x28, 0x00, 0x00, 0x02, 0x01, 0x01, 0x00, 0x01,
-    ])
-    state._state[CommandCodes.ZONE_SETTINGS] = bytes([
-        0x03, 0x01, 0x30, 0x63, 0x00, 0x50,
-    ])
+    state._state[CommandCodes.HDMI_SETTINGS] = bytes(
+        [
+            0x01,
+            0x01,
+            0x28,
+            0x00,
+            0x00,
+            0x02,
+            0x01,
+            0x01,
+            0x00,
+            0x01,
+        ]
+    )
+    state._state[CommandCodes.ZONE_SETTINGS] = bytes(
+        [
+            0x03,
+            0x01,
+            0x30,
+            0x63,
+            0x00,
+            0x50,
+        ]
+    )
     state._state[CommandCodes.VIDEO_OUTPUT_FRAME_RATE] = (
         bytes([0x04]) + b"My Song"  # PLAYING_APTX + track
     )
@@ -151,7 +158,9 @@ async def test_print_state_fallback_without_rich(make_state, capsys):
     with patch.dict("sys.modules", {"rich": None, "rich.console": None, "rich.table": None}):
         # Re-import to pick up the mocked modules
         import importlib
+
         import arcam.fmj.display as display_mod
+
         importlib.reload(display_mod)
         display_mod.print_state(state)
         captured = capsys.readouterr()

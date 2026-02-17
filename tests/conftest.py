@@ -1,9 +1,9 @@
 """Shared test fixtures."""
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
 from arcam.fmj import ApiModel
 from arcam.fmj.client import Client

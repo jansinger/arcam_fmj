@@ -7,7 +7,7 @@ Falls back to ``repr()`` if rich is not installed.
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .state import State
@@ -27,7 +27,7 @@ def _fmt(value: object) -> str:
 
 
 def _section(
-    table,
+    table: Any,
     title: str,
     rows: list[tuple[str, object]],
 ) -> None:
@@ -66,87 +66,125 @@ def print_state(state: State) -> None:
     table.add_column("Value", style="bright_white")
 
     # --- General -----------------------------------------------------------
-    _section(table, "General", [
-        ("Power", state.get_power()),
-        ("Source", state.get_source()),
-        ("Volume", state.get_volume()),
-        ("Mute", state.get_mute()),
-        ("Menu", state.get_menu()),
-    ])
+    _section(
+        table,
+        "General",
+        [
+            ("Power", state.get_power()),
+            ("Source", state.get_source()),
+            ("Volume", state.get_volume()),
+            ("Mute", state.get_mute()),
+            ("Menu", state.get_menu()),
+        ],
+    )
 
     # --- Audio Input -------------------------------------------------------
     audio_fmt, audio_cfg = state.get_incoming_audio_format()
-    _section(table, "Audio Input", [
-        ("Format", audio_fmt),
-        ("Channel Config", audio_cfg),
-        ("Sample Rate", (
-            f"{state.get_incoming_audio_sample_rate() / 1000:.1f} kHz"
-            if state.get_incoming_audio_sample_rate() is not None
-            else None
-        )),
-    ])
+    _section(
+        table,
+        "Audio Input",
+        [
+            ("Format", audio_fmt),
+            ("Channel Config", audio_cfg),
+            (
+                "Sample Rate",
+                (
+                    f"{state.get_incoming_audio_sample_rate() / 1000:.1f} kHz"
+                    if state.get_incoming_audio_sample_rate() is not None
+                    else None
+                ),
+            ),
+        ],
+    )
 
     # --- Audio Processing --------------------------------------------------
-    _section(table, "Audio Processing", [
-        ("Decode Mode 2CH", state.get_decode_mode_2ch()),
-        ("Decode Mode MCH", state.get_decode_mode_mch()),
-        ("Dolby Audio", state.get_dolby_audio()),
-        ("Compression", state.get_compression()),
-    ])
+    _section(
+        table,
+        "Audio Processing",
+        [
+            ("Decode Mode 2CH", state.get_decode_mode_2ch()),
+            ("Decode Mode MCH", state.get_decode_mode_mch()),
+            ("Dolby Audio", state.get_dolby_audio()),
+            ("Compression", state.get_compression()),
+        ],
+    )
 
     # --- Audio Controls ----------------------------------------------------
-    _section(table, "Audio Controls", [
-        ("Bass", state.get_bass()),
-        ("Treble", state.get_treble()),
-        ("Balance", state.get_balance()),
-        ("Subwoofer Trim", state.get_subwoofer_trim()),
-        ("Lip-Sync Delay", (
-            f"{state.get_lipsync_delay()} ms"
-            if state.get_lipsync_delay() is not None
-            else None
-        )),
-    ])
+    _section(
+        table,
+        "Audio Controls",
+        [
+            ("Bass", state.get_bass()),
+            ("Treble", state.get_treble()),
+            ("Balance", state.get_balance()),
+            ("Subwoofer Trim", state.get_subwoofer_trim()),
+            (
+                "Lip-Sync Delay",
+                (
+                    f"{state.get_lipsync_delay()} ms"
+                    if state.get_lipsync_delay() is not None
+                    else None
+                ),
+            ),
+        ],
+    )
 
     # --- Video Input -------------------------------------------------------
     vp = state.get_incoming_video_parameters()
     if vp is not None:
         scan = "i" if vp.interlaced else "p"
-        _section(table, "Video Input", [
-            ("Resolution", f"{vp.horizontal_resolution}x{vp.vertical_resolution}{scan}"),
-            ("Refresh Rate", f"{vp.refresh_rate} Hz"),
-            ("Aspect Ratio", vp.aspect_ratio),
-            ("Colorspace", vp.colorspace),
-        ])
+        _section(
+            table,
+            "Video Input",
+            [
+                ("Resolution", f"{vp.horizontal_resolution}x{vp.vertical_resolution}{scan}"),
+                ("Refresh Rate", f"{vp.refresh_rate} Hz"),
+                ("Aspect Ratio", vp.aspect_ratio),
+                ("Colorspace", vp.colorspace),
+            ],
+        )
 
     # --- Tuner -------------------------------------------------------------
-    _section(table, "Tuner", [
-        ("DAB Station", state.get_dab_station()),
-        ("DLS / PDT", state.get_dls_pdt()),
-        ("RDS", state.get_rds_information()),
-        ("Preset", state.get_tuner_preset()),
-    ])
+    _section(
+        table,
+        "Tuner",
+        [
+            ("DAB Station", state.get_dab_station()),
+            ("DLS / PDT", state.get_dls_pdt()),
+            ("RDS", state.get_rds_information()),
+            ("Preset", state.get_tuner_preset()),
+        ],
+    )
 
     # --- Now Playing -------------------------------------------------------
     np = state.get_now_playing_info()
     if np is not None:
-        _section(table, "Now Playing", [
-            ("Title", np.title or None),
-            ("Artist", np.artist or None),
-            ("Album", np.album or None),
-            ("Application", np.application or None),
-            ("Sample Rate", np.sample_rate),
-            ("Encoder", np.encoder),
-        ])
+        _section(
+            table,
+            "Now Playing",
+            [
+                ("Title", np.title or None),
+                ("Artist", np.artist or None),
+                ("Album", np.album or None),
+                ("Application", np.application or None),
+                ("Sample Rate", np.sample_rate),
+                ("Encoder", np.encoder),
+            ],
+        )
 
     # --- Network / Bluetooth -----------------------------------------------
     bt = state.get_bluetooth_status()
     bt_status = bt[0] if bt else None
     bt_track = bt[1] if bt and bt[1] else None
-    _section(table, "Network / Bluetooth", [
-        ("Playback Status", state.get_network_playback_status()),
-        ("Bluetooth", bt_status),
-        ("Bluetooth Track", bt_track),
-    ])
+    _section(
+        table,
+        "Network / Bluetooth",
+        [
+            ("Playback Status", state.get_network_playback_status()),
+            ("Bluetooth", bt_status),
+            ("Bluetooth Track", bt_track),
+        ],
+    )
 
     # --- Display & Room EQ -------------------------------------------------
     eq_names = state.get_room_eq_names()
@@ -166,36 +204,44 @@ def print_state(state: State) -> None:
     # --- HDMI Settings -----------------------------------------------------
     hdmi = state.get_hdmi_settings()
     if hdmi is not None:
-        _section(table, "HDMI Settings", [
-            ("Zone 1 OSD", hdmi.zone1_osd),
-            ("Zone 1 Output", hdmi.zone1_output),
-            ("Zone 1 Lip-Sync", f"{hdmi.zone1_lipsync} ms"),
-            ("Audio to TV", hdmi.hdmi_audio_to_tv),
-            ("Bypass IP", hdmi.hdmi_bypass_ip),
-            ("Bypass Source", hdmi.hdmi_bypass_source),
-            ("CEC Control", hdmi.cec_control),
-            ("ARC Control", hdmi.arc_control),
-            ("TV Audio", hdmi.tv_audio),
-            ("Power-Off Control", hdmi.power_off_control),
-        ])
+        _section(
+            table,
+            "HDMI Settings",
+            [
+                ("Zone 1 OSD", hdmi.zone1_osd),
+                ("Zone 1 Output", hdmi.zone1_output),
+                ("Zone 1 Lip-Sync", f"{hdmi.zone1_lipsync} ms"),
+                ("Audio to TV", hdmi.hdmi_audio_to_tv),
+                ("Bypass IP", hdmi.hdmi_bypass_ip),
+                ("Bypass Source", hdmi.hdmi_bypass_source),
+                ("CEC Control", hdmi.cec_control),
+                ("ARC Control", hdmi.arc_control),
+                ("TV Audio", hdmi.tv_audio),
+                ("Power-Off Control", hdmi.power_off_control),
+            ],
+        )
 
     # --- Zone Settings -----------------------------------------------------
     zs = state.get_zone_settings()
     if zs is not None:
-        _section(table, "Zone Settings", [
-            ("Zone 2 Input", zs.zone2_input),
-            ("Zone 2 Status", zs.zone2_status),
-            ("Zone 2 Volume", zs.zone2_volume),
-            ("Zone 2 Max Volume", zs.zone2_max_volume),
-            ("Zone 2 Fixed Volume", zs.zone2_fixed_volume),
-            ("Zone 2 Max-On Volume", zs.zone2_max_on_volume),
-        ])
+        _section(
+            table,
+            "Zone Settings",
+            [
+                ("Zone 2 Input", zs.zone2_input),
+                ("Zone 2 Status", zs.zone2_status),
+                ("Zone 2 Volume", zs.zone2_volume),
+                ("Zone 2 Max Volume", zs.zone2_max_volume),
+                ("Zone 2 Fixed Volume", zs.zone2_fixed_volume),
+                ("Zone 2 Max-On Volume", zs.zone2_max_on_volume),
+            ],
+        )
 
     # --- Presets -----------------------------------------------------------
     presets = state.get_preset_details()
     if presets:
         table.add_row(
-            f"[bold cyan]Presets[/bold cyan]",
+            "[bold cyan]Presets[/bold cyan]",
             f"({len(presets)} stored)",
             end_section=True,
         )

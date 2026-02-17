@@ -12,6 +12,16 @@ from collections.abc import Coroutine
 from typing import Any, TypeVar
 
 from . import (
+    MUTE_WRITE_SUPPORTED,
+    POWER_WRITE_SUPPORTED,
+    RC5CODE_DECODE_MODE_2CH,
+    RC5CODE_DECODE_MODE_MCH,
+    RC5CODE_MUTE,
+    RC5CODE_POWER,
+    RC5CODE_SOURCE,
+    RC5CODE_VOLUME,
+    SOURCE_WRITE_SUPPORTED,
+    VOLUME_STEP_SUPPORTED,
     AmxDuetRequest,
     AmxDuetResponse,
     AnswerCodes,
@@ -33,23 +43,13 @@ from . import (
     NowPlayingInfo,
     NowPlayingSampleRate,
     PresetDetail,
-    RoomEqNames,
-    VideoParameters,
     ResponseException,
     ResponsePacket,
+    RoomEqNames,
     SourceCodes,
-    ZoneSettings,
-    POWER_WRITE_SUPPORTED,
-    MUTE_WRITE_SUPPORTED,
-    SOURCE_WRITE_SUPPORTED,
-    VOLUME_STEP_SUPPORTED,
-    RC5CODE_SOURCE,
-    RC5CODE_POWER,
-    RC5CODE_MUTE,
-    RC5CODE_VOLUME,
-    RC5CODE_DECODE_MODE_2CH,
-    RC5CODE_DECODE_MODE_MCH,
     UnsupportedZone,
+    VideoParameters,
+    ZoneSettings,
     detect_api_model,
 )
 from .client import Client
@@ -182,9 +182,7 @@ class State:
         }
 
     def __repr__(self) -> str:
-        return "State ({}) Amx ({})".format(
-            self.to_dict(), self._amxduet.values if self._amxduet else {}
-        )
+        return f"State ({self.to_dict()}) Amx ({self._amxduet.values if self._amxduet else {}})"
 
     def _listen(self, packet: ResponsePacket | AmxDuetResponse) -> None:
         if isinstance(packet, AmxDuetResponse):
@@ -221,24 +219,16 @@ class State:
             return self._amxduet.device_revision
         return None
 
-    def get_rc5code(
-        self, table: dict[tuple[ApiModel, int], dict[_T, bytes]], value: _T
-    ) -> bytes:
+    def get_rc5code(self, table: dict[tuple[ApiModel, int], dict[_T, bytes]], value: _T) -> bytes:
         """Look up the RC5 IR command bytes for a given value and model/zone."""
         lookup = table.get((self._api_model, self._zn))
         if not lookup:
-            raise ValueError(
-                "Unknown mapping for model {} and zone {}".format(
-                    self._api_model, self._zn
-                )
-            )
+            raise ValueError(f"Unknown mapping for model {self._api_model} and zone {self._zn}")
 
         command = lookup.get(value)
         if not command:
             raise ValueError(
-                "Unknown command for model {} and zone {} and value {}".format(
-                    self._api_model, self._zn, value
-                )
+                f"Unknown command for model {self._api_model} and zone {self._zn} and value {value}"
             )
         return command
 
@@ -255,9 +245,7 @@ class State:
         self, cc: CommandCodes, value: int, min_val: int = 0, max_val: int = 255
     ) -> None:
         if not min_val <= value <= max_val:
-            raise ValueError(
-                f"{cc.name} value {value} out of range [{min_val}, {max_val}]"
-            )
+            raise ValueError(f"{cc.name} value {value} out of range [{min_val}, {max_val}]")
         await self._client.request(self._zn, cc, bytes([value]))
 
     def get_incoming_video_parameters(self) -> VideoParameters | None:
@@ -300,9 +288,7 @@ class State:
 
     async def set_decode_mode_2ch(self, mode: DecodeMode2CH) -> None:
         command = self.get_rc5code(RC5CODE_DECODE_MODE_2CH, mode)
-        await self._client.request(
-            self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command
-        )
+        await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
 
     def get_decode_mode_mch(self) -> DecodeModeMCH | None:
         value = self._state.get(CommandCodes.DECODE_MODE_STATUS_MCH)
@@ -312,20 +298,20 @@ class State:
 
     async def set_decode_mode_mch(self, mode: DecodeModeMCH) -> None:
         command = self.get_rc5code(RC5CODE_DECODE_MODE_MCH, mode)
-        await self._client.request(
-            self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command
-        )
+        await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
 
-    _2CH_CONFIGS = frozenset({
-        IncomingAudioConfig.DUAL_MONO,
-        IncomingAudioConfig.MONO,
-        IncomingAudioConfig.STEREO_ONLY,
-        IncomingAudioConfig.STEREO_ONLY_LO_RO,
-        IncomingAudioConfig.DUAL_MONO_LFE,
-        IncomingAudioConfig.MONO_LFE,
-        IncomingAudioConfig.STEREO_LFE,
-        IncomingAudioConfig.STEREO_ONLY_LO_RO_LFE,
-    })
+    _2CH_CONFIGS = frozenset(
+        {
+            IncomingAudioConfig.DUAL_MONO,
+            IncomingAudioConfig.MONO,
+            IncomingAudioConfig.STEREO_ONLY,
+            IncomingAudioConfig.STEREO_ONLY_LO_RO,
+            IncomingAudioConfig.DUAL_MONO_LFE,
+            IncomingAudioConfig.MONO_LFE,
+            IncomingAudioConfig.STEREO_LFE,
+            IncomingAudioConfig.STEREO_ONLY_LO_RO_LFE,
+        }
+    )
 
     def get_2ch(self) -> bool:
         """Return if source is 2 channel or not."""
@@ -405,24 +391,18 @@ class State:
             bool_to_hex = 0x01 if power else 0x00
             if not power:
                 self._state[CommandCodes.POWER] = bytes([0])
-            await self._client.request(
-                self._zn, CommandCodes.POWER, bytes([bool_to_hex])
-            )
+            await self._client.request(self._zn, CommandCodes.POWER, bytes([bool_to_hex]))
         else:
             command = self.get_rc5code(RC5CODE_POWER, power)
             if power:
-                await self._client.request(
-                    self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command
-                )
+                await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
             else:
                 # seed with a response, since device might not
                 # respond in timely fashion, so let's just
-                # assume we succeded until response come
+                # assume we succeeded until response comes
                 # back.
                 self._state[CommandCodes.POWER] = bytes([0])
-                await self._client.send(
-                    self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command
-                )
+                await self._client.send(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
 
     def get_menu(self) -> MenuCodes | None:
         value = self._state.get(CommandCodes.MENU)
@@ -441,20 +421,14 @@ class State:
         """Set mute state. Uses direct write or RC5+re-query depending on model."""
         if self._api_model in MUTE_WRITE_SUPPORTED:
             bool_to_hex = 0x00 if mute else 0x01
-            await self._client.request(
-                self._zn, CommandCodes.MUTE, bytes([bool_to_hex])
-            )
+            await self._client.request(self._zn, CommandCodes.MUTE, bytes([bool_to_hex]))
         else:
             command = self.get_rc5code(RC5CODE_MUTE, mute)
-            await self._client.request(
-                self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command
-            )
+            await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
             # Query mute state after RC5 command to update _state[MUTE]
             # RC5 commands don't update the MUTE state directly, only SIMULATE_RC5_IR_COMMAND
             try:
-                data = await self._client.request(
-                    self._zn, CommandCodes.MUTE, bytes([0xF0])
-                )
+                data = await self._client.request(self._zn, CommandCodes.MUTE, bytes([0xF0]))
                 self._state[CommandCodes.MUTE] = data
             except (
                 ResponseException,
@@ -490,9 +464,7 @@ class State:
             await self._client.request(self._zn, CommandCodes.CURRENT_SOURCE, value)
         else:
             command = self.get_rc5code(RC5CODE_SOURCE, src)
-            await self._client.request(
-                self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command
-            )
+            await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
 
     def get_volume(self) -> int | None:
         """Return the current volume level (0-99), or None if unknown."""
@@ -508,9 +480,7 @@ class State:
             await self._client.request(self._zn, CommandCodes.VOLUME, bytes([0xF1]))
         else:
             command = self.get_rc5code(RC5CODE_VOLUME, True)
-            await self._client.request(
-                self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command
-            )
+            await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
 
     async def dec_volume(self) -> None:
         """Decrement volume by one step."""
@@ -518,9 +488,7 @@ class State:
             await self._client.request(self._zn, CommandCodes.VOLUME, bytes([0xF2]))
         else:
             command = self.get_rc5code(RC5CODE_VOLUME, False)
-            await self._client.request(
-                self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command
-            )
+            await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
 
     def get_bass(self) -> int | None:
         """Return bass EQ level (0-255), or None if unknown."""
@@ -602,9 +570,7 @@ class State:
 
     async def set_dolby_audio(self, mode: DolbyAudioMode) -> None:
         """Set Dolby Audio mode."""
-        await self._client.request(
-            self._zn, CommandCodes.DOLBY_VOLUME, bytes([mode])
-        )
+        await self._client.request(self._zn, CommandCodes.DOLBY_VOLUME, bytes([mode]))
 
     def get_now_playing_info(self) -> NowPlayingInfo | None:
         """Return now-playing info (title, artist, album, etc.), or None."""
@@ -685,9 +651,7 @@ class State:
     async def set_zone1_osd(self, on: bool) -> None:
         """Set Zone 1 OSD on/off. Sends 0xF1=on, 0xF2=off."""
         cmd_byte = 0xF1 if on else 0xF2
-        await self._client.request(
-            self._zn, CommandCodes.ZONE_1_OSD_ON_OFF, bytes([cmd_byte])
-        )
+        await self._client.request(self._zn, CommandCodes.ZONE_1_OSD_ON_OFF, bytes([cmd_byte]))
 
     def get_video_output_switching(self) -> int | None:
         """Return video output switching (2=Out1, 3=Out2, 4=Out1&2), or None."""
@@ -707,13 +671,9 @@ class State:
         Uses F-codes: 0→0xF3 (off), 1→0xF2 (on), 2→0xF1 (auto).
         """
         if not 0 <= mode <= 2:
-            raise ValueError(
-                f"IMAX_ENHANCED value {mode} out of range [0, 2]"
-            )
+            raise ValueError(f"IMAX_ENHANCED value {mode} out of range [0, 2]")
         cmd_map = {0: 0xF3, 1: 0xF2, 2: 0xF1}
-        await self._client.request(
-            self._zn, CommandCodes.VIDEO_INPUT_TYPE, bytes([cmd_map[mode]])
-        )
+        await self._client.request(self._zn, CommandCodes.VIDEO_INPUT_TYPE, bytes([cmd_map[mode]]))
 
     def get_software_version(self) -> dict[int, tuple[int, int]]:
         """Return software versions as {sub_query: (major, minor)}.
@@ -732,12 +692,8 @@ class State:
     async def set_input_name(self, name: str) -> None:
         """Set custom input name (max 10 ASCII characters)."""
         if len(name) > 10:
-            raise ValueError(
-                f"Input name must be max 10 characters, got {len(name)}"
-            )
-        await self._client.request(
-            self._zn, CommandCodes.INPUT_NAME, name.encode("ascii")
-        )
+            raise ValueError(f"Input name must be max 10 characters, got {len(name)}")
+        await self._client.request(self._zn, CommandCodes.INPUT_NAME, name.encode("ascii"))
 
     def get_display_info_type(self) -> int | None:
         """Return VFD display info type (source-dependent), or None."""
@@ -781,8 +737,7 @@ class State:
     async def set_headphone_override(self, override: bool) -> None:
         """Set headphone override (True=speakers on, False=speakers muted if headphones)."""
         await self._client.request(
-            self._zn, CommandCodes.HEADPHONES_OVERRIDE,
-            bytes([0x01 if override else 0x00])
+            self._zn, CommandCodes.HEADPHONES_OVERRIDE, bytes([0x01 if override else 0x00])
         )
 
     def get_dab_station(self) -> str | None:
@@ -821,6 +776,134 @@ class State:
         """Return all known tuner presets as {index: PresetDetail}."""
         return self._presets
 
+    def _supports_command(self, cc: CommandCodes) -> bool:
+        """Check if the current device model supports the given command."""
+        if cc.version is None:
+            return True
+        model = self.model
+        return model is not None and model in cc.version
+
+    async def _update_command(self, cc: CommandCodes, *, timeout: float | None = None) -> None:
+        """Query a single command and store its response.
+
+        Skips commands not supported by the current device model.
+        """
+        if not self._supports_command(cc):
+            return
+        try:
+            data = await self._client.request(self._zn, cc, bytes([0xF0]), timeout=timeout)
+            self._state[cc] = data
+        except UnsupportedZone:
+            _LOGGER.debug("Unsupported zone %s for %s", self._zn, cc)
+        except ResponseException as e:
+            _LOGGER.debug("Response error skipping %s - %s", cc, e.ac)
+            self._state[cc] = None
+        except NotConnectedException:
+            _LOGGER.debug("Not connected skipping %s", cc)
+            self._state[cc] = None
+        except ConnectionError:
+            _LOGGER.error("Connection lost requesting %s", cc)
+            self._state[cc] = None
+        except TimeoutError:
+            _LOGGER.error("Timeout requesting %s", cc)
+
+    async def _update_presets(self) -> None:
+        """Query tuner presets sequentially."""
+        presets = {}
+        for preset in range(1, 51):
+            try:
+                data = await self._client.request(
+                    self._zn, CommandCodes.PRESET_DETAIL, bytes([preset])
+                )
+                if data != b"\x00":
+                    presets[preset] = PresetDetail.from_bytes(data)
+            except CommandInvalidAtThisTime:
+                break
+            except CommandNotRecognised:
+                _LOGGER.debug("Presets not supported skipping %s", preset)
+                break
+            except NotConnectedException:
+                _LOGGER.debug("Not connected skipping preset %s", preset)
+                return
+            except TimeoutError:
+                _LOGGER.error("Timeout requesting preset %s", preset)
+                return
+        self._presets = presets
+
+    async def _update_now_playing(self) -> None:
+        """Query NOW_PLAYING_INFO sub-queries (0xF0–0xF5)."""
+        if not self._supports_command(CommandCodes.NOW_PLAYING_INFO):
+            return
+        now_playing: dict[int, Any] = {}
+        for sub_query in (0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5):
+            try:
+                data = await self._client.request(
+                    self._zn, CommandCodes.NOW_PLAYING_INFO, bytes([sub_query])
+                )
+                if sub_query in (0xF4, 0xF5):
+                    # Sample rate and encoder are byte enums
+                    if sub_query == 0xF4:
+                        now_playing[sub_query] = NowPlayingSampleRate.from_bytes(data)
+                    else:
+                        now_playing[sub_query] = NowPlayingEncoder.from_bytes(data)
+                else:
+                    # Text fields (title, artist, album, application)
+                    now_playing[sub_query] = data.decode("utf8").rstrip()
+            except CommandInvalidAtThisTime:
+                break
+            except ResponseException as e:
+                _LOGGER.debug("Response error skipping now_playing 0x%02X - %s", sub_query, e.ac)
+            except NotConnectedException:
+                _LOGGER.debug("Not connected skipping now_playing")
+                return
+            except TimeoutError:
+                _LOGGER.error("Timeout requesting now_playing 0x%02X", sub_query)
+                return
+        self._now_playing = now_playing
+
+    async def _update_software_version(self) -> None:
+        """Query SOFTWARE_VERSION sub-queries (0xF0–0xF5)."""
+        versions: dict[int, tuple[int, int]] = {}
+        for sub_query in (0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5):
+            try:
+                data = await self._client.request(
+                    self._zn, CommandCodes.SOFTWARE_VERSION, bytes([sub_query])
+                )
+                if len(data) >= 3:
+                    versions[data[0]] = (data[1], data[2])
+            except CommandInvalidAtThisTime:
+                break
+            except ResponseException as e:
+                _LOGGER.debug(
+                    "Response error skipping software_version 0x%02X - %s", sub_query, e.ac
+                )
+            except NotConnectedException:
+                _LOGGER.debug("Not connected skipping software_version")
+                return
+            except TimeoutError:
+                _LOGGER.error("Timeout requesting software_version 0x%02X", sub_query)
+                return
+        self._software_version = versions
+
+    async def _update_amxduet(self, *, timeout: float | None = None) -> None:
+        """Query AMX Duet device identification and detect API model."""
+        try:
+            data = await self._client.request_raw(AmxDuetRequest(), timeout=timeout)
+            self._amxduet = data
+
+            detected = detect_api_model(data.device_model)
+            if detected is not None:
+                self._api_model = detected
+
+        except ResponseException as e:
+            _LOGGER.debug("Response error skipping %s", e.ac)
+        except NotConnectedException:
+            _LOGGER.debug("Not connected skipping amx")
+        except ConnectionError:
+            _LOGGER.error("Connection lost requesting amx")
+        except TimeoutError:
+            _LOGGER.error("Timeout requesting amx")
+
     async def update(self) -> None:
         """Poll the receiver for current state of all commands.
 
@@ -828,195 +911,83 @@ class State:
         power first and only polls remaining commands if the zone is on.
         Clears state if the client is disconnected.
         """
-        async def _update(cc: CommandCodes, *, timeout: float | None = None):
-            try:
-                data = await self._client.request(
-                    self._zn, cc, bytes([0xF0]), timeout=timeout
-                )
-                self._state[cc] = data
-            except UnsupportedZone:
-                _LOGGER.debug("Unsupported zone %s for %s", self._zn, cc)
-            except ResponseException as e:
-                _LOGGER.debug("Response error skipping %s - %s", cc, e.ac)
-                self._state[cc] = None
-            except NotConnectedException:
-                _LOGGER.debug("Not connected skipping %s", cc)
-                self._state[cc] = None
-            except ConnectionError:
-                _LOGGER.error("Connection lost requesting %s", cc)
-                self._state[cc] = None
-            except TimeoutError:
-                _LOGGER.error("Timeout requesting %s", cc)
-
-        async def _update_presets() -> None:
-            presets = {}
-            for preset in range(1, 51):
-                try:
-                    data = await self._client.request(
-                        self._zn, CommandCodes.PRESET_DETAIL, bytes([preset])
-                    )
-                    if data != b"\x00":
-                        presets[preset] = PresetDetail.from_bytes(data)
-                except CommandInvalidAtThisTime:
-                    break
-                except CommandNotRecognised:
-                    _LOGGER.debug("Presets not supported skipping %s", preset)
-                    break
-                except NotConnectedException as e:
-                    _LOGGER.debug("Not connected skipping preset %s", preset)
-                    return
-                except TimeoutError:
-                    _LOGGER.error("Timeout requesting preset %s", preset)
-                    return
-            self._presets = presets
-
-        async def _update_now_playing() -> None:
-            now_playing: dict[int, Any] = {}
-            for sub_query in (0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5):
-                try:
-                    data = await self._client.request(
-                        self._zn, CommandCodes.NOW_PLAYING_INFO, bytes([sub_query])
-                    )
-                    if sub_query in (0xF4, 0xF5):
-                        # Sample rate and encoder are byte enums
-                        if sub_query == 0xF4:
-                            now_playing[sub_query] = NowPlayingSampleRate.from_bytes(data)
-                        else:
-                            now_playing[sub_query] = NowPlayingEncoder.from_bytes(data)
-                    else:
-                        # Text fields (title, artist, album, application)
-                        now_playing[sub_query] = data.decode("utf8").rstrip()
-                except CommandInvalidAtThisTime:
-                    break
-                except ResponseException as e:
-                    _LOGGER.debug("Response error skipping now_playing 0x%02X - %s", sub_query, e.ac)
-                except NotConnectedException:
-                    _LOGGER.debug("Not connected skipping now_playing")
-                    return
-                except TimeoutError:
-                    _LOGGER.error("Timeout requesting now_playing 0x%02X", sub_query)
-                    return
-            self._now_playing = now_playing
-
-        async def _update_software_version() -> None:
-            versions: dict[int, tuple[int, int]] = {}
-            for sub_query in (0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5):
-                try:
-                    data = await self._client.request(
-                        self._zn, CommandCodes.SOFTWARE_VERSION, bytes([sub_query])
-                    )
-                    if len(data) >= 3:
-                        versions[data[0]] = (data[1], data[2])
-                except CommandInvalidAtThisTime:
-                    break
-                except ResponseException as e:
-                    _LOGGER.debug("Response error skipping software_version 0x%02X - %s", sub_query, e.ac)
-                except NotConnectedException:
-                    _LOGGER.debug("Not connected skipping software_version")
-                    return
-                except TimeoutError:
-                    _LOGGER.error("Timeout requesting software_version 0x%02X", sub_query)
-                    return
-            self._software_version = versions
-
-        async def _update_amxduet(*, timeout: float | None = None) -> None:
-            try:
-                data = await self._client.request_raw(
-                    AmxDuetRequest(), timeout=timeout
-                )
-                self._amxduet = data
-
-                detected = detect_api_model(data.device_model)
-                if detected is not None:
-                    self._api_model = detected
-
-            except ResponseException as e:
-                _LOGGER.debug("Response error skipping %s", e.ac)
-            except NotConnectedException:
-                _LOGGER.debug("Not connected skipping amx")
-            except ConnectionError:
-                _LOGGER.error("Connection lost requesting amx")
-            except TimeoutError:
-                _LOGGER.error("Timeout requesting amx")
-
         if self._client.connected:
-
             if self._zn == 1:
                 # Zone 1: always query power first (longer timeout for standby)
-                await _update(CommandCodes.POWER, timeout=5.0)
+                await self._update_command(CommandCodes.POWER, timeout=5.0)
 
                 if self.get_power() is True:
                     # Powered on: detect model if needed, then query all commands
                     if self._amxduet is None:
-                        await _update_amxduet()
+                        await self._update_amxduet()
                     updates = [
-                        _update(CommandCodes.VOLUME),
-                        _update(CommandCodes.MUTE),
-                        _update(CommandCodes.CURRENT_SOURCE),
-                        _update(CommandCodes.MENU),
-                        _update(CommandCodes.DECODE_MODE_STATUS_2CH),
-                        _update(CommandCodes.DECODE_MODE_STATUS_MCH),
-                        _update(CommandCodes.INCOMING_VIDEO_PARAMETERS),
-                        _update(CommandCodes.INCOMING_AUDIO_FORMAT),
-                        _update(CommandCodes.INCOMING_AUDIO_SAMPLE_RATE),
-                        _update(CommandCodes.DAB_STATION),
-                        _update(CommandCodes.DLS_PDT_INFO),
-                        _update(CommandCodes.RDS_INFORMATION),
-                        _update(CommandCodes.TUNER_PRESET),
-                        _update_presets(),
-                        _update(CommandCodes.BASS_EQUALIZATION),
-                        _update(CommandCodes.TREBLE_EQUALIZATION),
-                        _update(CommandCodes.BALANCE),
-                        _update(CommandCodes.SUBWOOFER_TRIM),
-                        _update(CommandCodes.LIPSYNC_DELAY),
-                        _update(CommandCodes.DISPLAY_BRIGHTNESS),
-                        _update(CommandCodes.ROOM_EQUALIZATION),
-                        _update(CommandCodes.COMPRESSION),
-                        _update(CommandCodes.NETWORK_PLAYBACK_STATUS),
-                        _update(CommandCodes.DOLBY_VOLUME),
-                        _update(CommandCodes.HDMI_SETTINGS),
-                        _update(CommandCodes.ZONE_SETTINGS),
-                        _update(CommandCodes.ROOM_EQ_NAMES),
-                        _update(CommandCodes.VIDEO_OUTPUT_FRAME_RATE),
-                        _update_now_playing(),
-                        _update(CommandCodes.HEADPHONES),
-                        _update(CommandCodes.DIRECT_MODE_STATUS),
-                        _update(CommandCodes.SELECT_ANALOG_DIGITAL),
-                        _update(CommandCodes.SUB_STEREO_TRIM),
-                        _update(CommandCodes.ZONE_1_OSD_ON_OFF),
-                        _update(CommandCodes.VIDEO_OUTPUT_SWITCHING),
-                        _update(CommandCodes.VIDEO_INPUT_TYPE),
-                        _update_software_version(),
-                        _update(CommandCodes.INPUT_NAME),
-                        _update(CommandCodes.DISPLAY_INFORMATION_TYPE),
-                        _update(CommandCodes.TUNE),
-                        _update(CommandCodes.DAB_PROGRAM_TYPE_CATEGORY),
-                        _update(CommandCodes.HEADPHONES_OVERRIDE),
+                        self._update_command(CommandCodes.VOLUME),
+                        self._update_command(CommandCodes.MUTE),
+                        self._update_command(CommandCodes.CURRENT_SOURCE),
+                        self._update_command(CommandCodes.MENU),
+                        self._update_command(CommandCodes.DECODE_MODE_STATUS_2CH),
+                        self._update_command(CommandCodes.DECODE_MODE_STATUS_MCH),
+                        self._update_command(CommandCodes.INCOMING_VIDEO_PARAMETERS),
+                        self._update_command(CommandCodes.INCOMING_AUDIO_FORMAT),
+                        self._update_command(CommandCodes.INCOMING_AUDIO_SAMPLE_RATE),
+                        self._update_command(CommandCodes.DAB_STATION),
+                        self._update_command(CommandCodes.DLS_PDT_INFO),
+                        self._update_command(CommandCodes.RDS_INFORMATION),
+                        self._update_command(CommandCodes.TUNER_PRESET),
+                        self._update_presets(),
+                        self._update_command(CommandCodes.BASS_EQUALIZATION),
+                        self._update_command(CommandCodes.TREBLE_EQUALIZATION),
+                        self._update_command(CommandCodes.BALANCE),
+                        self._update_command(CommandCodes.SUBWOOFER_TRIM),
+                        self._update_command(CommandCodes.LIPSYNC_DELAY),
+                        self._update_command(CommandCodes.DISPLAY_BRIGHTNESS),
+                        self._update_command(CommandCodes.ROOM_EQUALIZATION),
+                        self._update_command(CommandCodes.COMPRESSION),
+                        self._update_command(CommandCodes.NETWORK_PLAYBACK_STATUS),
+                        self._update_command(CommandCodes.DOLBY_VOLUME),
+                        self._update_command(CommandCodes.HDMI_SETTINGS),
+                        self._update_command(CommandCodes.ZONE_SETTINGS),
+                        self._update_command(CommandCodes.ROOM_EQ_NAMES),
+                        self._update_command(CommandCodes.VIDEO_OUTPUT_FRAME_RATE),
+                        self._update_now_playing(),
+                        self._update_command(CommandCodes.HEADPHONES),
+                        self._update_command(CommandCodes.DIRECT_MODE_STATUS),
+                        self._update_command(CommandCodes.SELECT_ANALOG_DIGITAL),
+                        self._update_command(CommandCodes.SUB_STEREO_TRIM),
+                        self._update_command(CommandCodes.ZONE_1_OSD_ON_OFF),
+                        self._update_command(CommandCodes.VIDEO_OUTPUT_SWITCHING),
+                        self._update_command(CommandCodes.VIDEO_INPUT_TYPE),
+                        self._update_software_version(),
+                        self._update_command(CommandCodes.INPUT_NAME),
+                        self._update_command(CommandCodes.DISPLAY_INFORMATION_TYPE),
+                        self._update_command(CommandCodes.TUNE),
+                        self._update_command(CommandCodes.DAB_PROGRAM_TYPE_CATEGORY),
+                        self._update_command(CommandCodes.HEADPHONES_OVERRIDE),
                     ]
                     await _gather_chunked(updates)
                 else:
                     # Standby: only query device name for identification.
                     # All other commands are skipped to avoid timeouts.
                     if self._amxduet is None:
-                        await _update_amxduet(timeout=5.0)
+                        await self._update_amxduet(timeout=5.0)
             else:
                 # Zone 2+: poll power first, then only poll remaining
                 # commands if the zone is actually powered on. This avoids
                 # timeouts and retries for commands sent to inactive zones.
                 # AMX Duet is not queried here — Zone 1 handles device
                 # identification since it's the same physical device.
-                await _update(CommandCodes.POWER, timeout=5.0)
+                await self._update_command(CommandCodes.POWER, timeout=5.0)
 
                 if self.get_power() is True:
                     updates = [
-                        _update(CommandCodes.VOLUME),
-                        _update(CommandCodes.MUTE),
-                        _update(CommandCodes.CURRENT_SOURCE),
-                        _update(CommandCodes.DAB_STATION),
-                        _update(CommandCodes.DLS_PDT_INFO),
-                        _update(CommandCodes.RDS_INFORMATION),
-                        _update(CommandCodes.TUNER_PRESET),
-                        _update_presets(),
+                        self._update_command(CommandCodes.VOLUME),
+                        self._update_command(CommandCodes.MUTE),
+                        self._update_command(CommandCodes.CURRENT_SOURCE),
+                        self._update_command(CommandCodes.DAB_STATION),
+                        self._update_command(CommandCodes.DLS_PDT_INFO),
+                        self._update_command(CommandCodes.RDS_INFORMATION),
+                        self._update_command(CommandCodes.TUNER_PRESET),
+                        self._update_presets(),
                     ]
                     await _gather_chunked(updates)
         else:

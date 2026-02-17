@@ -1,12 +1,11 @@
 """Tests for utils."""
 
-import pytest
-
 import time
 
-from arcam.fmj.utils import async_retry, Throttle
-from arcam.fmj.utils import get_uniqueid_from_device_description
+import pytest
 from aiohttp import web
+
+from arcam.fmj.utils import Throttle, async_retry, get_uniqueid_from_device_description
 
 MOCK_UNIQUE_ID = "0011044feeef"
 MOCK_UDN = f"uuid:aa331113-fa23-3333-2222-{MOCK_UNIQUE_ID}"
@@ -97,6 +96,7 @@ async def test_throttle_no_delay_after_waiting():
     throttle = Throttle(0.05)
     await throttle.get()
     import asyncio
+
     await asyncio.sleep(0.1)
     start = time.monotonic()
     await throttle.get()
@@ -113,7 +113,7 @@ async def test_retry_fails():
         calls += 1
         raise Exception()
 
-    with pytest.raises(Exception):
+    with pytest.raises(Exception):  # noqa: B017
         await tester()
 
     assert calls == 2
@@ -164,6 +164,4 @@ async def test_get_uniqueid_from_device_description(aiohttp_client):
     assert await get_uniqueid_from_device_description(client, "/dd.xml") is None
 
     response_text = _get_dd(MOCK_UNIQUE_ID, MOCK_SERIAL_NO, MOCK_UDN)
-    assert (
-        await get_uniqueid_from_device_description(client, "/dd.xml") == MOCK_UNIQUE_ID
-    )
+    assert await get_uniqueid_from_device_description(client, "/dd.xml") == MOCK_UNIQUE_ID

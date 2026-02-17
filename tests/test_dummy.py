@@ -3,16 +3,14 @@
 import pytest
 
 from arcam.fmj import (
-    AnswerCodes,
+    RC5CODE_DECODE_MODE_2CH,
+    RC5CODE_DECODE_MODE_MCH,
+    RC5CODE_SOURCE,
+    ApiModel,
     CommandCodes,
     CommandInvalidAtThisTime,
     CommandNotRecognised,
     ResponsePacket,
-    SourceCodes,
-    RC5CODE_SOURCE,
-    RC5CODE_DECODE_MODE_2CH,
-    RC5CODE_DECODE_MODE_MCH,
-    ApiModel,
 )
 from arcam.fmj.dummy import DummyServer
 
@@ -120,7 +118,7 @@ def test_ir_command_decode_mode_mch(dummy):
     # Find an MCH RC5 code that doesn't overlap with 2CH codes
     mch_codes = RC5CODE_DECODE_MODE_MCH[rc5_key]
     two_ch_values = set(RC5CODE_DECODE_MODE_2CH[rc5_key].values())
-    for mode, rc5_data in mch_codes.items():
+    for _mode, rc5_data in mch_codes.items():
         if rc5_data not in two_ch_values:
             break
     else:
@@ -158,9 +156,10 @@ def test_get_decode_mode_mch(dummy):
 
 
 def test_get_incoming_video_parameters(dummy):
-    """get_incoming_video_parameters returns VideoParameters object."""
+    """get_incoming_video_parameters returns raw bytes."""
     result = dummy.get_incoming_video_parameters()
-    assert result is not None
+    assert isinstance(result, bytes)
+    assert len(result) == 8
 
 
 def test_get_incoming_audio_format(dummy):
@@ -171,8 +170,8 @@ def test_get_incoming_audio_format(dummy):
 
 
 def test_get_incoming_audio_sample_rate(dummy):
-    """get_incoming_audio_sample_rate returns sample rate."""
-    assert dummy.get_incoming_audio_sample_rate() == 48000
+    """get_incoming_audio_sample_rate returns sample rate as raw bytes."""
+    assert dummy.get_incoming_audio_sample_rate() == bytes([0x02])
 
 
 # --- Tuner preset handlers ---

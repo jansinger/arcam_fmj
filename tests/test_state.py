@@ -6,25 +6,23 @@ from arcam.fmj import (
     AmxDuetResponse,
     AnswerCodes,
     ApiModel,
+    BluetoothStatus,
     CommandCodes,
     CommandInvalidAtThisTime,
     CommandNotRecognised,
     DolbyAudioMode,
-    HdmiSettings,
+    IncomingAudioConfig,
+    IncomingAudioFormat,
     MenuCodes,
     NetworkPlaybackStatus,
     NotConnectedException,
-    NowPlayingInfo,
-    NowPlayingSampleRate,
     NowPlayingEncoder,
-    BluetoothStatus,
-    ResponseException,
+    NowPlayingSampleRate,
+    PresetDetail,
     ResponsePacket,
-    RoomEqNames,
     SourceCodes,
-    ZoneSettings,
+    VideoParameters,
 )
-
 
 # --- Tests for get_network_playback_status ---
 
@@ -89,9 +87,7 @@ async def test_set_dolby_audio(make_state, mode, expected_byte):
     """Sends correct byte for each Dolby Audio mode."""
     state = make_state()
     await state.set_dolby_audio(mode)
-    state._client.request.assert_called_with(
-        1, CommandCodes.DOLBY_VOLUME, bytes([expected_byte])
-    )
+    state._client.request.assert_called_with(1, CommandCodes.DOLBY_VOLUME, bytes([expected_byte]))
 
 
 # --- Tests for get_now_playing_info ---
@@ -166,9 +162,7 @@ async def test_set_room_eq_preset(make_state, preset):
     """Sends correct preset byte value."""
     state = make_state()
     await state.set_room_eq(preset)
-    state._client.request.assert_called_with(
-        1, CommandCodes.ROOM_EQUALIZATION, bytes([preset])
-    )
+    state._client.request.assert_called_with(1, CommandCodes.ROOM_EQUALIZATION, bytes([preset]))
 
 
 # --- Tests for get_hdmi_settings ---
@@ -210,9 +204,7 @@ async def test_get_zone_settings_none(make_state):
 async def test_get_zone_settings_parsed(make_state):
     """Correctly parses Zone settings from 6-byte state data."""
     state = make_state()
-    state._state[CommandCodes.ZONE_SETTINGS] = bytes(
-        [0x01, 0x01, 0x32, 0x53, 0x00, 0x32]
-    )
+    state._state[CommandCodes.ZONE_SETTINGS] = bytes([0x01, 0x01, 0x32, 0x53, 0x00, 0x32])
     settings = state.get_zone_settings()
     assert settings is not None
     assert settings.zone2_input == 1
@@ -298,7 +290,7 @@ async def test_to_dict_includes_new_hda_keys(make_state):
 
 async def test_get_decode_mode_2ch_fallback_to_mch(make_state):
     """When 2CH mode returns None (error), falls back to MCH mode."""
-    from arcam.fmj import DecodeModeMCH, IncomingAudioFormat
+    from arcam.fmj import DecodeModeMCH
 
     state = make_state()
     # Audio format is PCM -> get_2ch() returns True
@@ -312,7 +304,7 @@ async def test_get_decode_mode_2ch_fallback_to_mch(make_state):
 
 async def test_get_decode_mode_mch_fallback_to_2ch(make_state):
     """When MCH mode returns None (error), falls back to 2CH mode."""
-    from arcam.fmj import DecodeMode2CH, IncomingAudioFormat
+    from arcam.fmj import DecodeMode2CH
 
     state = make_state()
     # Audio format is Dolby -> get_2ch() returns False
@@ -378,7 +370,6 @@ async def test_set_decode_mode_mch_enum_always_uses_mch(make_state):
 
 async def test_set_decode_mode_string_fallback_2ch_to_mch(make_state):
     """When string mode not in 2CH enum, falls back to MCH."""
-    from arcam.fmj import DecodeModeMCH
 
     state = make_state()
     # PCM audio (get_2ch() returns True), but mode only exists in MCH
@@ -389,7 +380,6 @@ async def test_set_decode_mode_string_fallback_2ch_to_mch(make_state):
 
 async def test_set_decode_mode_string_fallback_mch_to_2ch(make_state):
     """When string mode not in MCH enum, falls back to 2CH."""
-    from arcam.fmj import DecodeMode2CH
 
     state = make_state()
     # Dolby audio (get_2ch() returns False), but mode only exists in 2CH
@@ -467,7 +457,6 @@ async def test_get_decode_modes_returns_2ch_when_2ch_active(make_state):
 
 async def test_get_decode_modes_current_mode_in_list(make_state):
     """The current decode mode name must always appear in get_decode_modes() list."""
-    from arcam.fmj import DecodeModeMCH
 
     state = make_state()
     # PCM audio + MCH DTS Neural:X active (the problematic case)
@@ -547,18 +536,14 @@ async def test_set_power_on_direct_write(make_state):
     """SA series uses direct write for power on."""
     state = make_state(api_model=ApiModel.APISA_SERIES)
     await state.set_power(True)
-    state._client.request.assert_called_with(
-        1, CommandCodes.POWER, bytes([0x01])
-    )
+    state._client.request.assert_called_with(1, CommandCodes.POWER, bytes([0x01]))
 
 
 async def test_set_power_off_direct_write(make_state):
     """SA series uses direct write for power off and seeds state."""
     state = make_state(api_model=ApiModel.APISA_SERIES)
     await state.set_power(False)
-    state._client.request.assert_called_with(
-        1, CommandCodes.POWER, bytes([0x00])
-    )
+    state._client.request.assert_called_with(1, CommandCodes.POWER, bytes([0x00]))
     assert state._state[CommandCodes.POWER] == bytes([0])
 
 
@@ -583,27 +568,21 @@ async def test_set_volume(make_state):
     """Sends correct volume byte."""
     state = make_state()
     await state.set_volume(42)
-    state._client.request.assert_called_with(
-        1, CommandCodes.VOLUME, bytes([42])
-    )
+    state._client.request.assert_called_with(1, CommandCodes.VOLUME, bytes([42]))
 
 
 async def test_inc_volume_step_supported(make_state):
     """ST series uses volume step command 0xF1."""
     state = make_state(api_model=ApiModel.APIST_SERIES)
     await state.inc_volume()
-    state._client.request.assert_called_with(
-        1, CommandCodes.VOLUME, bytes([0xF1])
-    )
+    state._client.request.assert_called_with(1, CommandCodes.VOLUME, bytes([0xF1]))
 
 
 async def test_dec_volume_step_supported(make_state):
     """ST series uses volume step command 0xF2."""
     state = make_state(api_model=ApiModel.APIST_SERIES)
     await state.dec_volume()
-    state._client.request.assert_called_with(
-        1, CommandCodes.VOLUME, bytes([0xF2])
-    )
+    state._client.request.assert_called_with(1, CommandCodes.VOLUME, bytes([0xF2]))
 
 
 async def test_inc_volume_rc5(make_state):
@@ -636,7 +615,7 @@ async def test_get_mute_none(make_state):
 @pytest.mark.parametrize(
     "raw, expected",
     [
-        (0x00, True),   # 0 = muted
+        (0x00, True),  # 0 = muted
         (0x01, False),  # 1 = unmuted
     ],
 )
@@ -651,18 +630,14 @@ async def test_set_mute_direct_write(make_state):
     """SA series uses direct write for mute."""
     state = make_state(api_model=ApiModel.APISA_SERIES)
     await state.set_mute(True)
-    state._client.request.assert_called_with(
-        1, CommandCodes.MUTE, bytes([0x00])
-    )
+    state._client.request.assert_called_with(1, CommandCodes.MUTE, bytes([0x00]))
 
 
 async def test_set_unmute_direct_write(make_state):
     """SA series uses direct write for unmute."""
     state = make_state(api_model=ApiModel.APISA_SERIES)
     await state.set_mute(False)
-    state._client.request.assert_called_with(
-        1, CommandCodes.MUTE, bytes([0x01])
-    )
+    state._client.request.assert_called_with(1, CommandCodes.MUTE, bytes([0x01]))
 
 
 async def test_set_mute_rc5_with_followup_query(make_state):
@@ -828,9 +803,7 @@ async def test_set_tuner_preset(make_state):
     """Sends correct preset byte."""
     state = make_state()
     await state.set_tuner_preset(3)
-    state._client.request.assert_called_with(
-        1, CommandCodes.TUNER_PRESET, bytes([3])
-    )
+    state._client.request.assert_called_with(1, CommandCodes.TUNER_PRESET, bytes([3]))
 
 
 # --- Tests for _listen callback ---
@@ -854,7 +827,7 @@ async def test_listen_error_clears_state(make_state):
         zn=1,
         cc=CommandCodes.VOLUME,
         ac=AnswerCodes.COMMAND_NOT_RECOGNISED,
-        data=bytes(),
+        data=b"",
     )
     state._listen(packet)
     assert state._state[CommandCodes.VOLUME] is None
@@ -1269,6 +1242,7 @@ async def test_set_source_direct_write(make_state):
 async def test_get_2ch_analogue_direct(make_state):
     """get_2ch returns True for analogue direct format."""
     from arcam.fmj import IncomingAudioFormat
+
     state = make_state()
     state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes(
         [IncomingAudioFormat.ANALOGUE_DIRECT, 0x00]
@@ -1278,12 +1252,11 @@ async def test_get_2ch_analogue_direct(make_state):
 
 async def test_get_2ch_pcm_none_config(make_state):
     """get_2ch returns True for PCM with None audio config."""
-    from arcam.fmj import IncomingAudioFormat, IncomingAudioConfig
+    from arcam.fmj import IncomingAudioFormat
+
     state = make_state()
     # PCM format but with an unknown config byte that returns None
-    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes(
-        [IncomingAudioFormat.PCM, 0xFF]
-    )
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([IncomingAudioFormat.PCM, 0xFF])
     # IncomingAudioConfig.from_int(0xFF) may return a value or None
     # If it returns a non-2CH config, get_2ch should return False
     # If None, get_2ch should return True
@@ -1297,6 +1270,7 @@ async def test_get_2ch_pcm_none_config(make_state):
 async def test_get_decode_modes_no_current_2ch(make_state):
     """get_decode_modes returns 2CH modes when get_2ch() is True and no current mode."""
     from arcam.fmj import DecodeMode2CH
+
     state = make_state()
     # No decode mode state at all → get_decode_mode() returns None
     # But get_2ch() will return True (no audio format → analogue direct)
@@ -1308,6 +1282,7 @@ async def test_get_decode_modes_no_current_2ch(make_state):
 async def test_get_decode_modes_no_current_mch(make_state):
     """get_decode_modes returns MCH modes when get_2ch() is False and no current mode."""
     from arcam.fmj import DecodeModeMCH
+
     state = make_state()
     # Set audio format to Dolby (MCH) so get_2ch() returns False
     state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes([0x02, 0x00])
@@ -1333,6 +1308,7 @@ async def test_set_decode_mode_string_mch_primary(make_state):
 async def test_update_unsupported_zone(make_state):
     """update() handles UnsupportedZone without crashing."""
     from arcam.fmj import UnsupportedZone
+
     state = make_state(zn=2)
     state._amxduet = AmxDuetResponse(values={"Device-Make": "Arcam", "Device-Model": "AVR30"})
     # Power returns on, then remaining commands raise UnsupportedZone
@@ -1353,7 +1329,6 @@ async def test_update_unsupported_zone(make_state):
 
 async def test_update_not_connected_during_poll(make_state):
     """update() handles NotConnectedException by setting state to None."""
-    from arcam.fmj import NotConnectedException
     state = make_state(zn=1)
     state._amxduet = AmxDuetResponse(values={"Device-Make": "Arcam", "Device-Model": "AVR30"})
     state._client.request.side_effect = NotConnectedException()
@@ -1429,7 +1404,6 @@ async def test_update_amxduet_timeout(make_state):
 
 async def test_update_amxduet_not_connected(make_state):
     """update() handles NotConnectedException during AMX duet query."""
-    from arcam.fmj import NotConnectedException
     state = make_state(zn=1)
     state._client.request_raw.side_effect = NotConnectedException()
     state._client.request.side_effect = CommandNotRecognised()
@@ -1681,9 +1655,7 @@ async def test_set_input_name(make_state):
     """Sends ASCII-encoded name."""
     state = make_state()
     await state.set_input_name("BDP300")
-    state._client.request.assert_called_once_with(
-        state._zn, CommandCodes.INPUT_NAME, b"BDP300"
-    )
+    state._client.request.assert_called_once_with(state._zn, CommandCodes.INPUT_NAME, b"BDP300")
 
 
 async def test_set_input_name_rejects_too_long(make_state):
@@ -1739,18 +1711,14 @@ async def test_tune_up(make_state):
     """Sends 0x01 to increment frequency."""
     state = make_state()
     await state.tune_up()
-    state._client.request.assert_called_once_with(
-        state._zn, CommandCodes.TUNE, bytes([0x01])
-    )
+    state._client.request.assert_called_once_with(state._zn, CommandCodes.TUNE, bytes([0x01]))
 
 
 async def test_tune_down(make_state):
     """Sends 0x00 to decrement frequency."""
     state = make_state()
     await state.tune_down()
-    state._client.request.assert_called_once_with(
-        state._zn, CommandCodes.TUNE, bytes([0x00])
-    )
+    state._client.request.assert_called_once_with(state._zn, CommandCodes.TUNE, bytes([0x00]))
 
 
 # --- Tests for get_dab_program_type ---
@@ -1802,3 +1770,75 @@ async def test_set_headphone_override_clear(make_state):
     state._client.request.assert_called_once_with(
         state._zn, CommandCodes.HEADPHONES_OVERRIDE, bytes([0x00])
     )
+
+
+# --- Tests for get_incoming_video_parameters ---
+
+
+async def test_get_incoming_video_parameters_none(make_state):
+    """Returns None when no data available."""
+    state = make_state()
+    assert state.get_incoming_video_parameters() is None
+
+
+async def test_get_incoming_video_parameters_value(make_state):
+    """Parses raw bytes into VideoParameters."""
+    state = make_state()
+    state._state[CommandCodes.INCOMING_VIDEO_PARAMETERS] = bytes(
+        [
+            0x07,
+            0x80,  # 1920
+            0x04,
+            0x38,  # 1080
+            60,
+            0x00,
+            0x01,
+            0x00,
+        ]
+    )
+    result = state.get_incoming_video_parameters()
+    assert isinstance(result, VideoParameters)
+    assert result.horizontal_resolution == 1920
+    assert result.vertical_resolution == 1080
+    assert result.refresh_rate == 60
+    assert result.interlaced is False
+
+
+# --- Tests for get_incoming_audio_format ---
+
+
+async def test_get_incoming_audio_format_none(make_state):
+    """Returns (None, None) when no data available."""
+    state = make_state()
+    fmt, cfg = state.get_incoming_audio_format()
+    assert fmt is None
+    assert cfg is None
+
+
+async def test_get_incoming_audio_format_value(make_state):
+    """Parses raw bytes into (IncomingAudioFormat, IncomingAudioConfig)."""
+    state = make_state()
+    state._state[CommandCodes.INCOMING_AUDIO_FORMAT] = bytes(
+        [IncomingAudioFormat.PCM, IncomingAudioConfig.STEREO_ONLY]
+    )
+    fmt, cfg = state.get_incoming_audio_format()
+    assert fmt == IncomingAudioFormat.PCM
+    assert cfg == IncomingAudioConfig.STEREO_ONLY
+
+
+# --- Tests for get_preset_details ---
+
+
+async def test_get_preset_details_empty(make_state):
+    """Returns empty dict when no presets loaded."""
+    state = make_state()
+    assert state.get_preset_details() == {}
+
+
+async def test_get_preset_details_populated(make_state):
+    """Returns presets dict after population."""
+    state = make_state()
+    preset = PresetDetail(index=1, type=3, name="BBC R1")
+    state._presets = {1: preset}
+    result = state.get_preset_details()
+    assert result[1].name == "BBC R1"

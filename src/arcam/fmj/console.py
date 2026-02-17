@@ -4,22 +4,20 @@ import logging
 import sys
 
 from . import CommandCodes, SourceCodes
-
-_LOGGER = logging.getLogger(__name__)
 from .client import Client, ClientContext
 from .display import print_state
 from .dummy import DummyServer
 from .server import ServerContext
 from .state import State
 
-# pylint: disable=invalid-name
+_LOGGER = logging.getLogger(__name__)
 
 
-def auto_int(x):
+def auto_int(x: str) -> int:
     return int(x, 0)
 
 
-def auto_source(x):
+def auto_source(x: str) -> SourceCodes:
     return SourceCodes[x]
 
 
@@ -51,16 +49,14 @@ parser_server.add_argument("--port", default=50000, type=int)
 parser_server.add_argument("--model", default="AVR450")
 
 
-async def run_client(args):
+async def run_client(args: argparse.Namespace) -> None:
     client = Client(args.host, args.port)
     async with ClientContext(client):
-        result = await client.request(
-            args.zone, CommandCodes(args.command), bytes(args.data)
-        )
+        result = await client.request(args.zone, CommandCodes(args.command), bytes(args.data))
         print(result)
 
 
-async def run_state(args):
+async def run_state(args: argparse.Namespace) -> None:
     client = Client(args.host, args.port)
     async with ClientContext(client):
         state = State(client, args.zone)
@@ -72,10 +68,10 @@ async def run_state(args):
         if args.source is not None:
             await state.set_source(args.source)
 
-        if args.power_on is not None:
+        if args.power_on:
             await state.set_power(True)
 
-        if args.power_off is not None:
+        if args.power_off:
             await state.set_power(False)
 
         if args.monitor:
@@ -88,14 +84,14 @@ async def run_state(args):
             print_state(state)
 
 
-async def run_server(args):
+async def run_server(args: argparse.Namespace) -> None:
     server = DummyServer(args.host, args.port, args.model)
     async with ServerContext(server):
         while True:
             await asyncio.sleep(delay=1)
 
 
-def main():
+def main() -> None:
     args = parser.parse_args()
 
     if args.verbose:
@@ -104,9 +100,7 @@ def main():
 
         channel = logging.StreamHandler(sys.stdout)
         channel.setLevel(logging.DEBUG)
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         channel.setFormatter(formatter)
         root.addHandler(channel)
 

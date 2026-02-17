@@ -1,9 +1,7 @@
 import asyncio
 import functools
 import logging
-import re
 import time
-from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,56 +41,11 @@ class Throttle:
             self._timestamp = time.monotonic() + self._delay
 
 
-def _log_exception(msg, *args):
-    """Log an error and turn on traceback if debug is on."""
-    _LOGGER.error(msg, *args, exc_info=_LOGGER.getEffectiveLevel() == logging.DEBUG)
-
-
-def get_uniqueid_from_udn(data) -> str | None:
-    """Extract a unique id from udn."""
-    try:
-        return data[5:].split("-")[4]
-    except IndexError:
-        _log_exception("Unable to get unique id from %s", data)
-        return None
-
-
-def get_possibly_invalid_xml(data) -> Any:
-    from defusedxml import ElementTree
-
-    try:
-        return ElementTree.fromstring(data)
-    except ElementTree.ParseError:
-        _LOGGER.info("Device provide corrupt xml, trying with ampersand replacement")
-        data = re.sub(r"&(?![A-Za-z]+[0-9]*;|#[0-9]+;|#x[0-9a-fA-F]+;)", r"&amp;", data)
-        return ElementTree.fromstring(data)
-
-
-def get_udn_from_xml(xml: Any) -> str | None:
-    return xml.findtext(
-        "d:device/d:UDN", None, {"d": "urn:schemas-upnp-org:device-1-0"}
-    )
-
-
-async def get_uniqueid_from_device_description(session, url: str):
-    """Retrieve and extract unique id from url."""
-    import aiohttp
-    from defusedxml import ElementTree
-
-    try:
-        async with session.get(url) as req:
-            req.raise_for_status()
-            data = await req.text()
-            xml = get_possibly_invalid_xml(data)
-            udn = get_udn_from_xml(xml)
-            return get_uniqueid_from_udn(udn)
-    except (aiohttp.ClientError, TimeoutError, ElementTree.ParseError):
-        _log_exception("Unable to get device description from %s", url)
-        return None
-
-
-async def get_uniqueid_from_host(session, host: str):
-    """Try to deduce a unique id from a host based on ssdp/upnp."""
-    return await get_uniqueid_from_device_description(
-        session, f"http://{host}:8080/dd.xml"
-    )
+# Re-exports for backwards compatibility
+from .discovery import (  # noqa: E402, F401
+    get_possibly_invalid_xml,
+    get_udn_from_xml,
+    get_uniqueid_from_device_description,
+    get_uniqueid_from_host,
+    get_uniqueid_from_udn,
+)

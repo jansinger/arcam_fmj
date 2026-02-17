@@ -10,7 +10,6 @@ from arcam.fmj import (
     CommandCodes,
     CommandNotRecognised,
     CommandPacket,
-    ConnectionFailed,
     ResponsePacket,
 )
 from arcam.fmj.server import Server, ServerContext
@@ -101,14 +100,20 @@ async def test_process_request_handler_raises_response_exception(server):
 
 def test_register_handler_with_data(server):
     """register_handler with data creates (zn, cc, data) key."""
-    handler = lambda **kwargs: bytes([0x01])
+
+    def handler(**kwargs):
+        return bytes([0x01])
+
     server.register_handler(1, CommandCodes.POWER, bytes([0xF0]), handler)
     assert (1, CommandCodes.POWER, bytes([0xF0])) in server._handlers
 
 
 def test_register_handler_without_data(server):
     """register_handler with data=None creates (zn, cc) key."""
-    handler = lambda **kwargs: bytes([0x01])
+
+    def handler(**kwargs):
+        return bytes([0x01])
+
     server.register_handler(1, CommandCodes.POWER, None, handler)
     assert (1, CommandCodes.POWER) in server._handlers
 

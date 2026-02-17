@@ -6,21 +6,19 @@ without physical hardware.
 """
 
 from . import (
-    ApiModel,
+    RC5CODE_DECODE_MODE_2CH,
+    RC5CODE_DECODE_MODE_MCH,
+    RC5CODE_SOURCE,
+    SOURCE_CODES,
+    AnswerCodes,
     CommandCodes,
     CommandInvalidAtThisTime,
     CommandNotRecognised,
-    SourceCodes,
+    IncomingAudioConfig,
+    IncomingAudioFormat,
     IncomingVideoAspectRatio,
     IncomingVideoColorspace,
-    IncomingAudioFormat,
-    IncomingAudioConfig,
-    VideoParameters,
     ResponsePacket,
-    AnswerCodes,
-    RC5CODE_SOURCE,
-    RC5CODE_DECODE_MODE_2CH,
-    RC5CODE_DECODE_MODE_MCH,
     detect_api_model,
 )
 from .server import Server
@@ -54,25 +52,25 @@ class DummyServer(Server):
         rc5_key = (self._api_version, 1)
 
         self._volume = bytes([10])
-        self._source = SourceCodes.PVR.to_bytes(self._api_version, 1)
-        self._video_parameters = VideoParameters(
-            horizontal_resolution=1920,
-            vertical_resolution=1080,
-            refresh_rate=60,
-            interlaced=False,
-            aspect_ratio=IncomingVideoAspectRatio.ASPECT_16_9,
-            colorspace=IncomingVideoColorspace.NORMAL,
+        source_mapping = SOURCE_CODES[(self._api_version, 1)]
+        first_source = next(iter(source_mapping.values()))
+        self._source = first_source
+        self._video_parameters = bytes(
+            [
+                0x07,
+                0x80,  # 1920
+                0x04,
+                0x38,  # 1080
+                60,  # refresh rate
+                0x00,  # progressive
+                IncomingVideoAspectRatio.ASPECT_16_9,
+                IncomingVideoColorspace.NORMAL,
+            ]
         )
-        self._audio_format = bytes(
-            [IncomingAudioFormat.PCM, IncomingAudioConfig.STEREO_ONLY]
-        )
-        self._audio_sample_rate = 48000
-        self._decode_mode_2ch = bytes(
-            [next(iter(RC5CODE_DECODE_MODE_2CH[rc5_key]))]
-        )
-        self._decode_mode_mch = bytes(
-            [next(iter(RC5CODE_DECODE_MODE_MCH[rc5_key]))]
-        )
+        self._audio_format = bytes([IncomingAudioFormat.PCM, IncomingAudioConfig.STEREO_ONLY])
+        self._audio_sample_rate = bytes([0x02])  # 48000 Hz
+        self._decode_mode_2ch = bytes([next(iter(RC5CODE_DECODE_MODE_2CH[rc5_key]))])
+        self._decode_mode_mch = bytes([next(iter(RC5CODE_DECODE_MODE_MCH[rc5_key]))])
         self._tuner_preset = b"\xff"
         self._presets: dict[bytes, bytes] = {
             b"\x01": b"\x03SR P1   ",
@@ -90,16 +88,10 @@ class DummyServer(Server):
         self._decode_mode_2ch_rc5 = invert_rc5(RC5CODE_DECODE_MODE_2CH)
         self._decode_mode_mch_rc5 = invert_rc5(RC5CODE_DECODE_MODE_MCH)
 
-        self.register_handler(
-            0x01, CommandCodes.POWER, bytes([0xF0]), self.get_power
-        )
-        self.register_handler(
-            0x01, CommandCodes.VOLUME, bytes([0xF0]), self.get_volume
-        )
+        self.register_handler(0x01, CommandCodes.POWER, bytes([0xF0]), self.get_power)
+        self.register_handler(0x01, CommandCodes.VOLUME, bytes([0xF0]), self.get_volume)
         self.register_handler(0x01, CommandCodes.VOLUME, None, self.set_volume)
-        self.register_handler(
-            0x01, CommandCodes.CURRENT_SOURCE, bytes([0xF0]), self.get_source
-        )
+        self.register_handler(0x01, CommandCodes.CURRENT_SOURCE, bytes([0xF0]), self.get_source)
         self.register_handler(
             0x01,
             CommandCodes.INCOMING_VIDEO_PARAMETERS,
@@ -130,37 +122,29 @@ class DummyServer(Server):
             bytes([0xF0]),
             self.get_decode_mode_mch,
         )
-        self.register_handler(
-            0x01, CommandCodes.SIMULATE_RC5_IR_COMMAND, None, self.ir_command
-        )
-        self.register_handler(
-            0x01, CommandCodes.PRESET_DETAIL, None, self.get_preset_detail
-        )
-        self.register_handler(
-            0x01, CommandCodes.TUNER_PRESET, bytes([0xF0]), self.get_tuner_preset
-        )
-        self.register_handler(
-            0x01, CommandCodes.TUNER_PRESET, None, self.set_tuner_preset
-        )
+        self.register_handler(0x01, CommandCodes.SIMULATE_RC5_IR_COMMAND, None, self.ir_command)
+        self.register_handler(0x01, CommandCodes.PRESET_DETAIL, None, self.get_preset_detail)
+        self.register_handler(0x01, CommandCodes.TUNER_PRESET, bytes([0xF0]), self.get_tuner_preset)
+        self.register_handler(0x01, CommandCodes.TUNER_PRESET, None, self.set_tuner_preset)
 
-    def get_power(self, **kwargs):
+    def get_power(self, **kwargs: bytes) -> bytes:
         return bytes([1])
 
-    def set_volume(self, data, **kwargs):
+    def set_volume(self, data: bytes, **kwargs: bytes) -> bytes:
         self._volume = data
         return self._volume
 
-    def get_volume(self, **kwargs):
+    def get_volume(self, **kwargs: bytes) -> bytes:
         return self._volume
 
-    def get_source(self, **kwargs):
+    def get_source(self, **kwargs: bytes) -> bytes:
         return self._source
 
-    def set_source(self, data, **kwargs):
+    def set_source(self, data: bytes, **kwargs: bytes) -> bytes:
         self._source = data
         return self._source
 
-    def ir_command(self, data, **kwargs):
+    def ir_command(self, data: bytes, **kwargs: bytes) -> list[ResponsePacket]:
         source = self._source_rc5.get(data)
         if source:
             source_bytes = source.to_bytes(self._api_version, 1)
@@ -217,29 +201,29 @@ class DummyServer(Server):
 
         raise CommandNotRecognised()
 
-    def get_decode_mode_2ch(self, **kwargs):
+    def get_decode_mode_2ch(self, **kwargs: bytes) -> bytes:
         return self._decode_mode_2ch
 
-    def get_decode_mode_mch(self, **kwargs):
+    def get_decode_mode_mch(self, **kwargs: bytes) -> bytes:
         return self._decode_mode_mch
 
-    def get_incoming_video_parameters(self, **kwargs):
+    def get_incoming_video_parameters(self, **kwargs: bytes) -> bytes:
         return self._video_parameters
 
-    def get_incoming_audio_format(self, **kwargs):
+    def get_incoming_audio_format(self, **kwargs: bytes) -> bytes:
         return self._audio_format
 
-    def get_incoming_audio_sample_rate(self, **kwargs):
+    def get_incoming_audio_sample_rate(self, **kwargs: bytes) -> bytes:
         return self._audio_sample_rate
 
-    def get_tuner_preset(self, **kwargs):
+    def get_tuner_preset(self, **kwargs: bytes) -> bytes:
         return self._tuner_preset
 
-    def set_tuner_preset(self, data, **kwargs):
+    def set_tuner_preset(self, data: bytes, **kwargs: bytes) -> bytes:
         self._tuner_preset = data
         return self._tuner_preset
 
-    def get_preset_detail(self, data, **kwargs):
+    def get_preset_detail(self, data: bytes, **kwargs: bytes) -> bytes:
         preset = self._presets.get(data)
         if preset:
             return data + preset

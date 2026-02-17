@@ -1,17 +1,16 @@
-import logging
-
-import pytest
 from unittest.mock import MagicMock
 
-from arcam.fmj.client import Client
-from arcam.fmj.state import State
+import pytest
+
 from arcam.fmj import (
-    SourceCodes,
-    ApiModel,
     AnswerCodes,
+    ApiModel,
     CommandCodes,
     ResponsePacket,
+    SourceCodes,
 )
+from arcam.fmj.client import Client
+from arcam.fmj.state import State
 
 
 @pytest.mark.parametrize(
@@ -60,10 +59,7 @@ async def test_set_source(zn, api_model, source, ir, data):
     client = MagicMock(spec=Client)
     state = State(client, zn, api_model)
 
-    if ir:
-        command_code = CommandCodes.SIMULATE_RC5_IR_COMMAND
-    else:
-        command_code = CommandCodes.CURRENT_SOURCE
+    command_code = CommandCodes.SIMULATE_RC5_IR_COMMAND if ir else CommandCodes.CURRENT_SOURCE
 
     client.request.return_value = ResponsePacket(
         zn,

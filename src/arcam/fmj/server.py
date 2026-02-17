@@ -13,6 +13,7 @@ from . import (
     AmxDuetRequest,
     AmxDuetResponse,
     AnswerCodes,
+    CommandCodes,
     CommandNotRecognised,
     CommandPacket,
     ResponseException,
@@ -36,9 +37,7 @@ class Server:
         self._server: asyncio.AbstractServer | None = None
         self._host = host
         self._port = port
-        self._handlers: dict[tuple[int, int] | tuple[int, int, bytes], Callable] = (
-            dict()
-        )
+        self._handlers: dict[tuple[int, int] | tuple[int, int, bytes], Callable] = dict()
         self._tasks: list[asyncio.Task] = list()
         self._amxduet = AmxDuetResponse(
             {
@@ -52,7 +51,8 @@ class Server:
     async def process(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         _LOGGER.debug("Client connected")
         task = asyncio.current_task()
-        assert task
+        if task is None:
+            raise RuntimeError("process() must be called within an asyncio task")
         self._tasks.append(task)
         try:
             await self.process_runner(reader, writer)
@@ -61,9 +61,7 @@ class Server:
             self._tasks.remove(task)
             writer.close()
 
-    async def process_runner(
-        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-    ):
+    async def process_runner(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         while True:
             request = await read_command(reader)
             if request is None:
@@ -75,7 +73,9 @@ class Server:
             for response in responses:
                 await write_packet(writer, response)
 
-    async def process_request(self, request: CommandPacket | AmxDuetRequest):
+    async def process_request(
+        self, request: CommandPacket | AmxDuetRequest
+    ) -> list[ResponsePacket | AmxDuetResponse]:
         if isinstance(request, AmxDuetRequest):
             return [self._amxduet]
 
@@ -88,32 +88,36 @@ class Server:
                 data = handler(zn=request.zn, cc=request.cc, data=request.data)
 
                 if isinstance(data, bytes):
-                    response = [
-                        ResponsePacket(
-                            request.zn, request.cc, AnswerCodes.STATUS_UPDATE, data
-                        )
+                    response: list[ResponsePacket | AmxDuetResponse] = [
+                        ResponsePacket(request.zn, request.cc, AnswerCodes.STATUS_UPDATE, data)
                     ]
                 else:
                     response = data
             else:
                 raise CommandNotRecognised()
         except ResponseException as e:
-            response = [ResponsePacket(request.zn, request.cc, e.ac, e.data or b"")]
+            response = [
+                ResponsePacket(
+                    request.zn, request.cc, e.ac or AnswerCodes.STATUS_UPDATE, e.data or b""
+                )
+            ]
 
         return response
 
-    def register_handler(self, zn, cc, data, fun):
+    def register_handler(
+        self, zn: int, cc: CommandCodes, data: bytes | None, fun: Callable
+    ) -> None:
         if data is not None:
             self._handlers[(zn, cc, data)] = fun
         else:
             self._handlers[(zn, cc)] = fun
 
-    async def start(self):
+    async def start(self) -> "Server":
         _LOGGER.debug("Starting server")
         self._server = await asyncio.start_server(self.process, self._host, self._port)
         return self
 
-    async def stop(self):
+    async def stop(self) -> None:
         if self._tasks:
             _LOGGER.debug("Cancelling clients %s", self._tasks)
             for task in self._tasks:
@@ -131,9 +135,9 @@ class ServerContext:
     def __init__(self, server: Server):
         self._server = server
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Server:
         await self._server.start()
-        return self
+        return self._server
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         await self._server.stop()

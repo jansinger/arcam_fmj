@@ -1,23 +1,21 @@
 """Unit tests for client.py: ClientBase, Client, ClientContext."""
 
 import asyncio
-
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from arcam.fmj import (
+    AnswerCodes,
     ArcamException,
     CommandCodes,
     CommandNotRecognised,
     ConnectionFailed,
-    EnumFlags,
     NotConnectedException,
     ResponsePacket,
-    AnswerCodes,
     UnsupportedZone,
 )
 from arcam.fmj.client import Client, ClientBase, ClientContext
-
 
 # --- ClientBase unit tests ---
 
@@ -25,7 +23,10 @@ from arcam.fmj.client import Client, ClientBase, ClientContext
 def test_add_remove_listener():
     """add_listener/remove_listener manage the listener set."""
     base = ClientBase()
-    listener = lambda pkt: None
+
+    def listener(pkt):
+        pass
+
     base.add_listener(listener)
     assert listener in base._listen
     base.remove_listener(listener)
@@ -35,7 +36,10 @@ def test_add_remove_listener():
 def test_listen_context_manager():
     """listen() context manager adds/removes listener."""
     base = ClientBase()
-    listener = lambda pkt: None
+
+    def listener(pkt):
+        pass
+
     with base.listen(listener):
         assert listener in base._listen
     assert listener not in base._listen
@@ -148,9 +152,7 @@ async def test_request_raises_response_exception():
     base = ClientBase()
     base._writer = MagicMock()
 
-    response = ResponsePacket(
-        1, CommandCodes.POWER, AnswerCodes.COMMAND_NOT_RECOGNISED, b""
-    )
+    response = ResponsePacket(1, CommandCodes.POWER, AnswerCodes.COMMAND_NOT_RECOGNISED, b"")
     base.request_raw = AsyncMock(return_value=response)
 
     with pytest.raises(CommandNotRecognised):
@@ -190,17 +192,24 @@ async def test_client_start_already_started():
 async def test_client_start_connection_error():
     """Client.start() raises ConnectionFailed on ConnectionError."""
     c = Client("localhost", 59999)
-    with patch("arcam.fmj.client.asyncio.open_connection", side_effect=ConnectionRefusedError()):
-        with pytest.raises(ConnectionFailed):
-            await c.start()
+    with (
+        patch("arcam.fmj.client.asyncio.open_connection", side_effect=ConnectionRefusedError()),
+        pytest.raises(ConnectionFailed),
+    ):
+        await c.start()
 
 
 async def test_client_start_os_error():
     """Client.start() raises ConnectionFailed on OSError."""
     c = Client("localhost", 59999)
-    with patch("arcam.fmj.client.asyncio.open_connection", side_effect=OSError("network unreachable")):
-        with pytest.raises(ConnectionFailed):
-            await c.start()
+    with (
+        patch(
+            "arcam.fmj.client.asyncio.open_connection",
+            side_effect=OSError("network unreachable"),
+        ),
+        pytest.raises(ConnectionFailed),
+    ):
+        await c.start()
 
 
 async def test_client_stop_connection_error():

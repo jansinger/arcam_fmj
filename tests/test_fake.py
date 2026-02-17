@@ -3,8 +3,9 @@
 import asyncio
 import logging
 import unittest
-import pytest
 from unittest.mock import ANY
+
+import pytest
 
 from arcam.fmj import (
     CommandCodes,
@@ -18,25 +19,19 @@ from arcam.fmj.state import State
 
 _LOGGER = logging.getLogger(__name__)
 
-# pylint: disable=redefined-outer-name
-
 
 @pytest.fixture
 async def server():
-    s = Server("localhost", 8888, "AVR450")
+    s = Server("localhost", 0, "AVR450")
     async with ServerContext(s):
-        s.register_handler(
-            0x01, CommandCodes.POWER, bytes([0xF0]), lambda **kwargs: bytes([0x00])
-        )
-        s.register_handler(
-            0x01, CommandCodes.VOLUME, bytes([0xF0]), lambda **kwargs: bytes([0x01])
-        )
+        s.register_handler(0x01, CommandCodes.POWER, bytes([0xF0]), lambda **kwargs: bytes([0x00]))
+        s.register_handler(0x01, CommandCodes.VOLUME, bytes([0xF0]), lambda **kwargs: bytes([0x01]))
         yield s
 
 
 @pytest.fixture
 async def silent_server():
-    s = Server("localhost", 8888, "AVR450")
+    s = Server("localhost", 0, "AVR450")
 
     async def process(reader, writer):
         while True:
@@ -48,9 +43,14 @@ async def silent_server():
         yield s
 
 
+def _server_port(server: Server) -> int:
+    """Get the actual port assigned by the OS."""
+    return server._server.sockets[0].getsockname()[1]
+
+
 @pytest.fixture
-async def client():
-    c = Client("localhost", 8888)
+async def client(server):
+    c = Client("localhost", _server_port(server))
     async with ClientContext(c):
         yield c
 
@@ -88,20 +88,24 @@ async def test_state(server, client):
     assert state.get(CommandCodes.POWER) == bytes([0x00])
 
 
-async def test_silent_server_request(speedy_client, silent_server, client):
-    with pytest.raises(asyncio.TimeoutError):
-        await client.request(0x01, CommandCodes.POWER, bytes([0xF0]))
+async def test_silent_server_request(speedy_client, silent_server):
+    c = Client("localhost", _server_port(silent_server))
+    async with ClientContext(c):
+        with pytest.raises(asyncio.TimeoutError):
+            await c.request(0x01, CommandCodes.POWER, bytes([0xF0]))
 
 
-async def test_unsupported_zone(speedy_client, silent_server, client):
-    with pytest.raises(UnsupportedZone):
-        await client.request(0x02, CommandCodes.DECODE_MODE_STATUS_2CH, bytes([0xF0]))
+async def test_unsupported_zone(speedy_client, silent_server):
+    c = Client("localhost", _server_port(silent_server))
+    async with ClientContext(c):
+        with pytest.raises(UnsupportedZone):
+            await c.request(0x02, CommandCodes.DECODE_MODE_STATUS_2CH, bytes([0xF0]))
 
 
 async def test_silent_server_disconnect(speedy_client, silent_server):
     from arcam.fmj.client import _HEARTBEAT_TIMEOUT
 
-    c = Client("localhost", 8888)
+    c = Client("localhost", _server_port(silent_server))
     connected = True
     with pytest.raises(ConnectionFailed):
         async with ClientContext(c):
@@ -113,18 +117,14 @@ async def test_silent_server_disconnect(speedy_client, silent_server):
 async def test_heartbeat(speedy_client, server, client):
     from arcam.fmj.client import _HEARTBEAT_INTERVAL
 
-    with unittest.mock.patch.object(
-        server, "process_request", wraps=server.process_request
-    ) as req:
+    with unittest.mock.patch.object(server, "process_request", wraps=server.process_request) as req:
         await asyncio.sleep(_HEARTBEAT_INTERVAL + 0.5)
         req.assert_called_once_with(ANY)
 
 
 async def test_cancellation(silent_server):
-    from arcam.fmj.client import _HEARTBEAT_TIMEOUT
-
     e = asyncio.Event()
-    c = Client("localhost", 8888)
+    c = Client("localhost", _server_port(silent_server))
 
     async def runner():
         await c.start()

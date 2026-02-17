@@ -1,42 +1,39 @@
 """Tests for arcam.fmj.__init__ module fixes."""
 
 import pytest
+
 from arcam.fmj import (
     APIVERSION_DAB_SERIES,
-    APIVERSION_860_SERIES,
     APIVERSION_HDA_SERIES,
-    ApiModel,
     DEVICE_PROFILES,
-    DeviceProfile,
-    detect_api_model,
     SA_SOURCE_MAPPING,
+    AmxDuetRequest,
+    AmxDuetResponse,
+    AnswerCodes,
+    ApiModel,
+    CommandCodes,
     CommandInvalidAtThisTime,
     CommandNotRecognised,
+    CommandPacket,
     HdmiSettings,
     InvalidDataLength,
     InvalidPacket,
     InvalidZoneException,
     ParameterNotRecognised,
     PresetDetail,
-    PresetType,
     ResponseException,
     ResponsePacket,
-    CommandPacket,
-    AmxDuetResponse,
-    AmxDuetRequest,
-    CommandCodes,
-    AnswerCodes,
     SourceCodes,
     VideoParameters,
     ZoneSettings,
+    detect_api_model,
 )
-
 
 # --- Tests for APIVERSION_DAB_SERIES fix ---
 
 
 def test_dab_series_contains_full_model_names():
-    """Test that APIVERSION_DAB_SERIES contains full model name strings, not individual characters."""
+    """APIVERSION_DAB_SERIES contains full model name strings, not individual characters."""
     expected_models = {"AV860", "AVR850", "AVR550", "AVR390", "RV-6", "RV-9", "MC-10"}
     for model in expected_models:
         assert model in APIVERSION_DAB_SERIES, f"{model} should be in APIVERSION_DAB_SERIES"
@@ -76,7 +73,10 @@ def test_sa_source_mapping_no_duplicate_bytes():
     for source, byte_val in SA_SOURCE_MAPPING.items():
         assert byte_val not in seen_values.values() or all(
             k == source for k, v in seen_values.items() if v == byte_val
-        ), f"Duplicate byte value {byte_val!r} for {source} (already used by {[k for k, v in seen_values.items() if v == byte_val]})"
+        ), (
+            f"Duplicate byte value {byte_val!r} for {source} "
+            f"(already used by {[k for k, v in seen_values.items() if v == byte_val]})"
+        )
         seen_values[source] = byte_val
 
 
@@ -105,7 +105,7 @@ def test_preset_detail_am_frequency_zero_padded():
 
 def test_preset_detail_fm_rds_name():
     """Test FM RDS name parsing."""
-    name_bytes = "SR P1   ".encode("utf8")
+    name_bytes = b"SR P1   "
     data = bytes([1, 0x02]) + name_bytes
     detail = PresetDetail.from_bytes(data)
     assert detail.name == "SR P1"
@@ -113,7 +113,7 @@ def test_preset_detail_fm_rds_name():
 
 def test_preset_detail_dab_name():
     """Test DAB station name parsing."""
-    name_bytes = "P3 Star ".encode("utf8")
+    name_bytes = b"P3 Star "
     data = bytes([1, 0x03]) + name_bytes
     detail = PresetDetail.from_bytes(data)
     assert detail.name == "P3 Star"
@@ -255,7 +255,7 @@ def test_bluetooth_status_values():
 
 def test_now_playing_info_from_dict_full():
     """Test NowPlayingInfo.from_dict with all fields populated."""
-    from arcam.fmj import NowPlayingInfo, NowPlayingSampleRate, NowPlayingEncoder
+    from arcam.fmj import NowPlayingEncoder, NowPlayingInfo, NowPlayingSampleRate
 
     data = {
         0xF0: "Test Song",
@@ -299,7 +299,7 @@ def test_now_playing_info_from_dict_empty():
 
 def test_now_playing_info_to_dict():
     """Test NowPlayingInfo.to_dict round-trip."""
-    from arcam.fmj import NowPlayingInfo, NowPlayingSampleRate, NowPlayingEncoder
+    from arcam.fmj import NowPlayingEncoder, NowPlayingInfo, NowPlayingSampleRate
 
     info = NowPlayingInfo(
         title="Song",
@@ -307,7 +307,9 @@ def test_now_playing_info_to_dict():
         album="Album",
         application="App",
         sample_rate=NowPlayingSampleRate.KHZ_48,
-        encoder=NowPlayingEncoder.AAC if hasattr(NowPlayingEncoder, "AAC") else NowPlayingEncoder.MP3,
+        encoder=(
+            NowPlayingEncoder.AAC if hasattr(NowPlayingEncoder, "AAC") else NowPlayingEncoder.MP3
+        ),
     )
     d = info.to_dict()
     assert d["title"] == "Song"
@@ -522,11 +524,11 @@ def test_command_packet_round_trip_with_data():
 
 def test_command_packet_round_trip_empty_data():
     """Test CommandPacket round-trip with empty data."""
-    original = CommandPacket(1, CommandCodes.SOFTWARE_VERSION, bytes())
+    original = CommandPacket(1, CommandCodes.SOFTWARE_VERSION, b"")
     serialized = original.to_bytes()
     restored = CommandPacket.from_bytes(serialized)
     assert restored.zn == 1
-    assert restored.data == bytes()
+    assert restored.data == b""
 
 
 # --- Tests for DeviceProfile and detect_api_model ---
@@ -561,7 +563,12 @@ def test_device_profiles_cover_all_api_models():
 
 def test_device_profiles_feature_flags_consistent():
     """Feature flags in profiles match the legacy *_SUPPORTED sets."""
-    from arcam.fmj import POWER_WRITE_SUPPORTED, MUTE_WRITE_SUPPORTED, SOURCE_WRITE_SUPPORTED, VOLUME_STEP_SUPPORTED
+    from arcam.fmj import (
+        MUTE_WRITE_SUPPORTED,
+        POWER_WRITE_SUPPORTED,
+        SOURCE_WRITE_SUPPORTED,
+        VOLUME_STEP_SUPPORTED,
+    )
 
     for api_model, profile in DEVICE_PROFILES.items():
         assert profile.power_writable == (api_model in POWER_WRITE_SUPPORTED), (
@@ -690,3 +697,55 @@ def test_amx_duet_request_from_bytes_invalid():
     """AmxDuetRequest.from_bytes raises InvalidPacket for non-AMX data."""
     with pytest.raises(InvalidPacket, match="not a amx"):
         AmxDuetRequest.from_bytes(b"NOTAMX")
+
+
+# --- Tests for IntOrTypeEnum ---
+
+
+def test_intenum_from_int_basic():
+    """IntOrTypeEnum.from_int returns correct member for known values."""
+    from arcam.fmj import IntOrTypeEnum
+
+    class TestEnum(IntOrTypeEnum):
+        TEST = 55
+        TEST_VERSION = 23, {1}
+
+    res = TestEnum.from_int(55)
+    assert res.name == "TEST"
+    assert res.value == 55
+    assert res.version is None
+
+    res = TestEnum.from_int(23)
+    assert res.name == "TEST_VERSION"
+    assert res.value == 23
+    assert res.version == {1}
+
+
+def test_intenum_from_int_auto_creates_unknown():
+    """IntOrTypeEnum.from_int auto-creates CODE_N for unknown values."""
+    from arcam.fmj import IntOrTypeEnum
+
+    class TestEnum(IntOrTypeEnum):
+        TEST = 55
+
+    res = TestEnum.from_int(1)
+    assert res.name == "CODE_1"
+    assert res.value == 1
+    assert res.version is None
+
+
+# --- Tests for AmxDuetResponse round-trip ---
+
+
+def test_amx_duet_response_round_trip():
+    """AmxDuetResponse.from_bytes → to_bytes round-trip preserves data."""
+    src = (
+        b"AMXB<Device-SDKClass=Receiver><Device-Make=ARCAM>"
+        b"<Device-Model=AV860><Device-Revision=x.y.z>\r"
+    )
+    res = AmxDuetResponse.from_bytes(src)
+    assert res.device_class == "Receiver"
+    assert res.device_make == "ARCAM"
+    assert res.device_model == "AV860"
+    assert res.device_revision == "x.y.z"
+    assert res.to_bytes() == src
