@@ -8,6 +8,7 @@ callbacks from the Client.
 
 import asyncio
 import logging
+from collections.abc import Coroutine
 from typing import Any, TypeVar
 
 from . import (
@@ -55,6 +56,15 @@ from .client import Client
 
 _LOGGER = logging.getLogger(__name__)
 _T = TypeVar("_T")
+_UPDATE_CHUNK_SIZE = 8
+
+
+async def _gather_chunked(
+    coros: list[Coroutine[Any, Any, Any]], chunk_size: int = _UPDATE_CHUNK_SIZE
+) -> None:
+    """Run coroutines in sequential chunks to avoid overwhelming the device."""
+    for i in range(0, len(coros), chunk_size):
+        await asyncio.gather(*coros[i : i + chunk_size])
 
 
 class State:
@@ -818,17 +828,22 @@ class State:
         power first and only polls remaining commands if the zone is on.
         Clears state if the client is disconnected.
         """
-        async def _update(cc: CommandCodes):
+        async def _update(cc: CommandCodes, *, timeout: float | None = None):
             try:
-                data = await self._client.request(self._zn, cc, bytes([0xF0]))
+                data = await self._client.request(
+                    self._zn, cc, bytes([0xF0]), timeout=timeout
+                )
                 self._state[cc] = data
             except UnsupportedZone:
                 _LOGGER.debug("Unsupported zone %s for %s", self._zn, cc)
             except ResponseException as e:
                 _LOGGER.debug("Response error skipping %s - %s", cc, e.ac)
                 self._state[cc] = None
-            except NotConnectedException as e:
+            except NotConnectedException:
                 _LOGGER.debug("Not connected skipping %s", cc)
+                self._state[cc] = None
+            except ConnectionError:
+                _LOGGER.error("Connection lost requesting %s", cc)
                 self._state[cc] = None
             except TimeoutError:
                 _LOGGER.error("Timeout requesting %s", cc)
@@ -904,9 +919,11 @@ class State:
                     return
             self._software_version = versions
 
-        async def _update_amxduet() -> None:
+        async def _update_amxduet(*, timeout: float | None = None) -> None:
             try:
-                data = await self._client.request_raw(AmxDuetRequest())
+                data = await self._client.request_raw(
+                    AmxDuetRequest(), timeout=timeout
+                )
                 self._amxduet = data
 
                 detected = detect_api_model(data.device_model)
@@ -915,68 +932,80 @@ class State:
 
             except ResponseException as e:
                 _LOGGER.debug("Response error skipping %s", e.ac)
-            except NotConnectedException as e:
+            except NotConnectedException:
                 _LOGGER.debug("Not connected skipping amx")
+            except ConnectionError:
+                _LOGGER.error("Connection lost requesting amx")
             except TimeoutError:
                 _LOGGER.error("Timeout requesting amx")
 
         if self._client.connected:
-            if self._amxduet is None:
-                await _update_amxduet()
 
             if self._zn == 1:
-                # Zone 1: poll all commands in parallel
-                updates = [
-                    _update(CommandCodes.POWER),
-                    _update(CommandCodes.VOLUME),
-                    _update(CommandCodes.MUTE),
-                    _update(CommandCodes.CURRENT_SOURCE),
-                    _update(CommandCodes.MENU),
-                    _update(CommandCodes.DECODE_MODE_STATUS_2CH),
-                    _update(CommandCodes.DECODE_MODE_STATUS_MCH),
-                    _update(CommandCodes.INCOMING_VIDEO_PARAMETERS),
-                    _update(CommandCodes.INCOMING_AUDIO_FORMAT),
-                    _update(CommandCodes.INCOMING_AUDIO_SAMPLE_RATE),
-                    _update(CommandCodes.DAB_STATION),
-                    _update(CommandCodes.DLS_PDT_INFO),
-                    _update(CommandCodes.RDS_INFORMATION),
-                    _update(CommandCodes.TUNER_PRESET),
-                    _update_presets(),
-                    _update(CommandCodes.BASS_EQUALIZATION),
-                    _update(CommandCodes.TREBLE_EQUALIZATION),
-                    _update(CommandCodes.BALANCE),
-                    _update(CommandCodes.SUBWOOFER_TRIM),
-                    _update(CommandCodes.LIPSYNC_DELAY),
-                    _update(CommandCodes.DISPLAY_BRIGHTNESS),
-                    _update(CommandCodes.ROOM_EQUALIZATION),
-                    _update(CommandCodes.COMPRESSION),
-                    _update(CommandCodes.NETWORK_PLAYBACK_STATUS),
-                    _update(CommandCodes.DOLBY_VOLUME),
-                    _update(CommandCodes.HDMI_SETTINGS),
-                    _update(CommandCodes.ZONE_SETTINGS),
-                    _update(CommandCodes.ROOM_EQ_NAMES),
-                    _update(CommandCodes.VIDEO_OUTPUT_FRAME_RATE),
-                    _update_now_playing(),
-                    _update(CommandCodes.HEADPHONES),
-                    _update(CommandCodes.DIRECT_MODE_STATUS),
-                    _update(CommandCodes.SELECT_ANALOG_DIGITAL),
-                    _update(CommandCodes.SUB_STEREO_TRIM),
-                    _update(CommandCodes.ZONE_1_OSD_ON_OFF),
-                    _update(CommandCodes.VIDEO_OUTPUT_SWITCHING),
-                    _update(CommandCodes.VIDEO_INPUT_TYPE),
-                    _update_software_version(),
-                    _update(CommandCodes.INPUT_NAME),
-                    _update(CommandCodes.DISPLAY_INFORMATION_TYPE),
-                    _update(CommandCodes.TUNE),
-                    _update(CommandCodes.DAB_PROGRAM_TYPE_CATEGORY),
-                    _update(CommandCodes.HEADPHONES_OVERRIDE),
-                ]
-                await asyncio.gather(*updates)
+                # Zone 1: always query power first (longer timeout for standby)
+                await _update(CommandCodes.POWER, timeout=5.0)
+
+                if self.get_power() is True:
+                    # Powered on: detect model if needed, then query all commands
+                    if self._amxduet is None:
+                        await _update_amxduet()
+                    updates = [
+                        _update(CommandCodes.VOLUME),
+                        _update(CommandCodes.MUTE),
+                        _update(CommandCodes.CURRENT_SOURCE),
+                        _update(CommandCodes.MENU),
+                        _update(CommandCodes.DECODE_MODE_STATUS_2CH),
+                        _update(CommandCodes.DECODE_MODE_STATUS_MCH),
+                        _update(CommandCodes.INCOMING_VIDEO_PARAMETERS),
+                        _update(CommandCodes.INCOMING_AUDIO_FORMAT),
+                        _update(CommandCodes.INCOMING_AUDIO_SAMPLE_RATE),
+                        _update(CommandCodes.DAB_STATION),
+                        _update(CommandCodes.DLS_PDT_INFO),
+                        _update(CommandCodes.RDS_INFORMATION),
+                        _update(CommandCodes.TUNER_PRESET),
+                        _update_presets(),
+                        _update(CommandCodes.BASS_EQUALIZATION),
+                        _update(CommandCodes.TREBLE_EQUALIZATION),
+                        _update(CommandCodes.BALANCE),
+                        _update(CommandCodes.SUBWOOFER_TRIM),
+                        _update(CommandCodes.LIPSYNC_DELAY),
+                        _update(CommandCodes.DISPLAY_BRIGHTNESS),
+                        _update(CommandCodes.ROOM_EQUALIZATION),
+                        _update(CommandCodes.COMPRESSION),
+                        _update(CommandCodes.NETWORK_PLAYBACK_STATUS),
+                        _update(CommandCodes.DOLBY_VOLUME),
+                        _update(CommandCodes.HDMI_SETTINGS),
+                        _update(CommandCodes.ZONE_SETTINGS),
+                        _update(CommandCodes.ROOM_EQ_NAMES),
+                        _update(CommandCodes.VIDEO_OUTPUT_FRAME_RATE),
+                        _update_now_playing(),
+                        _update(CommandCodes.HEADPHONES),
+                        _update(CommandCodes.DIRECT_MODE_STATUS),
+                        _update(CommandCodes.SELECT_ANALOG_DIGITAL),
+                        _update(CommandCodes.SUB_STEREO_TRIM),
+                        _update(CommandCodes.ZONE_1_OSD_ON_OFF),
+                        _update(CommandCodes.VIDEO_OUTPUT_SWITCHING),
+                        _update(CommandCodes.VIDEO_INPUT_TYPE),
+                        _update_software_version(),
+                        _update(CommandCodes.INPUT_NAME),
+                        _update(CommandCodes.DISPLAY_INFORMATION_TYPE),
+                        _update(CommandCodes.TUNE),
+                        _update(CommandCodes.DAB_PROGRAM_TYPE_CATEGORY),
+                        _update(CommandCodes.HEADPHONES_OVERRIDE),
+                    ]
+                    await _gather_chunked(updates)
+                else:
+                    # Standby: only query device name for identification.
+                    # All other commands are skipped to avoid timeouts.
+                    if self._amxduet is None:
+                        await _update_amxduet(timeout=5.0)
             else:
                 # Zone 2+: poll power first, then only poll remaining
                 # commands if the zone is actually powered on. This avoids
                 # timeouts and retries for commands sent to inactive zones.
-                await _update(CommandCodes.POWER)
+                # AMX Duet is not queried here — Zone 1 handles device
+                # identification since it's the same physical device.
+                await _update(CommandCodes.POWER, timeout=5.0)
 
                 if self.get_power() is True:
                     updates = [
@@ -989,7 +1018,7 @@ class State:
                         _update(CommandCodes.TUNER_PRESET),
                         _update_presets(),
                     ]
-                    await asyncio.gather(*updates)
+                    await _gather_chunked(updates)
         else:
             if self._state:
                 self._state = dict()

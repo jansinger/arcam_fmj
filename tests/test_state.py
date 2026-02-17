@@ -919,12 +919,17 @@ async def test_wait_changed_not_fired_for_wrong_zone(make_state):
 # --- Tests for update() connected path ---
 
 
-async def test_update_zone1_polls_all_commands(make_state):
-    """update() zone 1 fires parallel requests for all command codes."""
+async def test_update_zone1_polls_all_commands_when_on(make_state):
+    """update() zone 1 queries all commands including presets/now-playing when on."""
     state = make_state(zn=1)
     state._amxduet = AmxDuetResponse(values={"Device-Make": "Arcam", "Device-Model": "AVR30"})
 
-    async def mock_request(zn, cc, data):
+    queried_ccs = set()
+
+    async def mock_request(zn, cc, data, **kwargs):
+        queried_ccs.add(cc)
+        if cc == CommandCodes.POWER:
+            return bytes([0x01])  # Power ON
         if cc == CommandCodes.PRESET_DETAIL:
             raise CommandInvalidAtThisTime()
         if cc == CommandCodes.NOW_PLAYING_INFO:
@@ -933,8 +938,54 @@ async def test_update_zone1_polls_all_commands(make_state):
 
     state._client.request.side_effect = mock_request
     await state.update()
-    # Should have made many requests (power, volume, mute, source, etc.)
+    # Should include standby-safe commands + power-on extras
     assert state._client.request.call_count >= 20
+    assert CommandCodes.HEADPHONES_OVERRIDE in queried_ccs
+    assert CommandCodes.PRESET_DETAIL in queried_ccs
+    assert CommandCodes.NOW_PLAYING_INFO in queried_ccs
+
+
+async def test_update_zone1_standby_only_power_and_amxduet(make_state):
+    """update() zone 1 queries only power and AMX Duet in standby."""
+    state = make_state(zn=1)
+
+    async def mock_request(zn, cc, data, **kwargs):
+        if cc == CommandCodes.POWER:
+            return bytes([0x00])  # Standby
+        return bytes([0x00])
+
+    state._client.request.side_effect = mock_request
+    state._client.request_raw.return_value = AmxDuetResponse(
+        values={"Device-Make": "Arcam", "Device-Model": "AVR30"}
+    )
+    await state.update()
+    assert state.get_power() is False
+    # Only power queried via request, AMX Duet via request_raw
+    assert state._client.request.call_count == 1
+    assert state._client.request_raw.call_count == 1
+    assert state._amxduet is not None
+
+    # No other commands should be queried
+    calls = [c[0][1] for c in state._client.request.call_args_list]
+    assert calls == [CommandCodes.POWER]
+
+
+async def test_update_zone1_standby_skips_amxduet_if_cached(make_state):
+    """update() zone 1 skips AMX Duet in standby if already cached."""
+    state = make_state(zn=1)
+    state._amxduet = AmxDuetResponse(values={"Device-Make": "Arcam", "Device-Model": "AVR30"})
+
+    async def mock_request(zn, cc, data, **kwargs):
+        if cc == CommandCodes.POWER:
+            return bytes([0x00])  # Standby
+        return bytes([0x00])
+
+    state._client.request.side_effect = mock_request
+    await state.update()
+    assert state.get_power() is False
+    # Only power, no AMX Duet query since already cached
+    assert state._client.request.call_count == 1
+    assert state._client.request_raw.call_count == 0
 
 
 async def test_update_zone2_polls_power_first(make_state):
@@ -943,7 +994,7 @@ async def test_update_zone2_polls_power_first(make_state):
     state._amxduet = AmxDuetResponse(values={"Device-Make": "Arcam", "Device-Model": "AVR30"})
 
     # Respond to preset detail with CommandInvalidAtThisTime to stop iteration
-    async def mock_request(zn, cc, data):
+    async def mock_request(zn, cc, data, **kwargs):
         if cc == CommandCodes.PRESET_DETAIL:
             raise CommandInvalidAtThisTime()
         return bytes([0x01])
@@ -972,7 +1023,9 @@ async def test_update_detects_model_from_amxduet(make_state):
         values={"Device-Make": "Arcam", "Device-Model": "AVR30"}
     )
 
-    async def mock_request(zn, cc, data):
+    async def mock_request(zn, cc, data, **kwargs):
+        if cc == CommandCodes.POWER:
+            return bytes([0x01])  # Power ON
         if cc == CommandCodes.PRESET_DETAIL:
             raise CommandInvalidAtThisTime()
         if cc == CommandCodes.NOW_PLAYING_INFO:
@@ -1285,7 +1338,7 @@ async def test_update_unsupported_zone(make_state):
     # Power returns on, then remaining commands raise UnsupportedZone
     call_count = [0]
 
-    async def mock_request(zn, cc, data):
+    async def mock_request(zn, cc, data, **kwargs):
         call_count[0] += 1
         if cc == CommandCodes.POWER:
             return bytes([0x01])
@@ -1315,9 +1368,11 @@ async def test_update_presets_success(make_state):
 
     call_count = 0
 
-    async def mock_request(zn, cc, data):
+    async def mock_request(zn, cc, data, **kwargs):
         nonlocal call_count
         call_count += 1
+        if cc == CommandCodes.POWER:
+            return bytes([0x01])  # Power ON (presets only queried when on)
         if cc == CommandCodes.PRESET_DETAIL:
             if data == bytes([1]):
                 return bytes([1]) + b"\x03SR P1   "
@@ -1336,7 +1391,9 @@ async def test_update_now_playing_success(make_state):
     state = make_state(zn=1)
     state._amxduet = AmxDuetResponse(values={"Device-Make": "Arcam", "Device-Model": "AVR30"})
 
-    async def mock_request(zn, cc, data):
+    async def mock_request(zn, cc, data, **kwargs):
+        if cc == CommandCodes.POWER:
+            return bytes([0x01])  # Power ON (now_playing only queried when on)
         if cc == CommandCodes.NOW_PLAYING_INFO:
             sub = data[0]
             if sub == 0xF0:

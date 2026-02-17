@@ -124,14 +124,21 @@ class ClientBase:
         return self._writer is not None
 
     @overload
-    async def request_raw(self, request: CommandPacket) -> ResponsePacket: ...
+    async def request_raw(
+        self, request: CommandPacket, *, timeout: float | None = None
+    ) -> ResponsePacket: ...
 
     @overload
-    async def request_raw(self, request: AmxDuetRequest) -> AmxDuetResponse: ...
+    async def request_raw(
+        self, request: AmxDuetRequest, *, timeout: float | None = None
+    ) -> AmxDuetResponse: ...
 
     @async_retry(2, asyncio.TimeoutError)
     async def request_raw(
-        self, request: CommandPacket | AmxDuetRequest
+        self,
+        request: CommandPacket | AmxDuetRequest,
+        *,
+        timeout: float | None = None,
     ) -> ResponsePacket | AmxDuetResponse:
         if not self._writer:
             raise NotConnectedException()
@@ -145,7 +152,7 @@ class ClientBase:
 
         await self._throttle.get()
 
-        async with asyncio.timeout(_REQUEST_TIMEOUT):
+        async with asyncio.timeout(timeout or _REQUEST_TIMEOUT):
             _LOGGER.debug("Requesting %s", request)
             with self.listen(listen):
                 await write_packet(writer, request)
@@ -165,7 +172,9 @@ class ClientBase:
         await self._throttle.get()
         await write_packet(writer, request)
 
-    async def request(self, zn: int, cc: CommandCodes, data: bytes):
+    async def request(
+        self, zn: int, cc: CommandCodes, data: bytes, *, timeout: float | None = None
+    ):
         """Send a command and return the response data bytes.
 
         Raises ResponseException subclasses for non-STATUS_UPDATE answers.
@@ -180,7 +189,9 @@ class ClientBase:
             await self.send(zn, cc, data)
             return
 
-        response = await self.request_raw(CommandPacket(zn, cc, data))
+        response = await self.request_raw(
+            CommandPacket(zn, cc, data), timeout=timeout
+        )
 
         if response.ac == AnswerCodes.STATUS_UPDATE:
             return response.data

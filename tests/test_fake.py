@@ -84,8 +84,8 @@ async def test_invalid_command(server, client):
 async def test_state(server, client):
     state = State(client, 0x01)
     await state.update()
+    # Server returns power=OFF (standby), so only power is queried
     assert state.get(CommandCodes.POWER) == bytes([0x00])
-    assert state.get(CommandCodes.VOLUME) == bytes([0x01])
 
 
 async def test_silent_server_request(speedy_client, silent_server, client):
