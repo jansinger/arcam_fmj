@@ -70,7 +70,7 @@ async def test_set_source(zn, api_model, source, ir, data):
 
     await state.set_source(source)
 
-    client.request.assert_called_with(zn, command_code, data)
+    client.request.assert_called_with(zn, command_code, data, priority=0)
 
 
 @pytest.mark.parametrize(
