@@ -5,7 +5,7 @@ import sys
 
 from . import CommandCodes, SourceCodes
 from .client import Client, ClientContext
-from .display import print_state
+from .display import build_table, print_state
 from .dummy import DummyServer
 from .server import ServerContext
 from .state import State
@@ -56,11 +56,29 @@ async def run_client(args: argparse.Namespace) -> None:
         print(result)
 
 
+def _live_progress(live):
+    """Return a progress callback that updates a Rich Live display."""
+
+    def _update(state):
+        table = build_table(state)
+        if table is not None:
+            live.update(table)
+
+    return _update
+
+
 async def run_state(args: argparse.Namespace) -> None:
     client = Client(args.host, args.port)
     async with ClientContext(client):
         state = State(client, args.zone)
-        await state.update()
+
+        try:
+            from rich.live import Live
+
+            with Live(refresh_per_second=8) as live:
+                await state.update(progress=_live_progress(live))
+        except ImportError:
+            await state.update()
 
         if args.volume is not None:
             await state.set_volume(args.volume)

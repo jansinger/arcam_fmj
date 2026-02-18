@@ -39,19 +39,13 @@ def _section(
         table.add_row(f"  {label}", _fmt(value))
 
 
-def print_state(state: State) -> None:
-    """Print *state* as a grouped rich table.
-
-    Falls back to ``print(repr(state))`` when rich is not installed.
-    """
+def build_table(state: State) -> Any:
+    """Build a Rich Table for *state*, or return None if rich is unavailable."""
     try:
-        from rich.console import Console
         from rich.table import Table
     except ImportError:
-        print(repr(state))
-        return
+        return None
 
-    console = Console()
     model = state.model or "Unknown"
     revision = state.revision or ""
     header = f"{model} {revision}".strip()
@@ -249,6 +243,22 @@ def print_state(state: State) -> None:
             p = presets[idx]
             table.add_row(f"  #{idx:2d}  {_fmt(p.type)}", p.name)
 
+    return table
+
+
+def print_state(state: State) -> None:
+    """Print *state* as a grouped rich table.
+
+    Falls back to ``print(repr(state))`` when rich is not installed.
+    """
+    table = build_table(state)
+    if table is None:
+        print(repr(state))
+        return
+
+    from rich.console import Console
+
+    console = Console()
     console.print()
     console.print(table)
     console.print()

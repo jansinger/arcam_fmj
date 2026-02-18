@@ -19,7 +19,7 @@ def async_retry(attempts=2, allowed_exceptions=()):
                 except allowed_exceptions:
                     if attempt == 0:
                         raise
-                    _LOGGER.warning("Retrying: %s %s", f, args)
+                    _LOGGER.debug("Retrying: %s %s", f, args)
 
         return wrapper
 

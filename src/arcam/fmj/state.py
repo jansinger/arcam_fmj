@@ -8,7 +8,7 @@ callbacks from the Client.
 
 import asyncio
 import logging
-from collections.abc import Coroutine
+from collections.abc import Callable
 from typing import Any, TypeVar
 
 from . import (
@@ -56,15 +56,6 @@ from .client import Client
 
 _LOGGER = logging.getLogger(__name__)
 _T = TypeVar("_T")
-_UPDATE_CHUNK_SIZE = 8
-
-
-async def _gather_chunked(
-    coros: list[Coroutine[Any, Any, Any]], chunk_size: int = _UPDATE_CHUNK_SIZE
-) -> None:
-    """Run coroutines in sequential chunks to avoid overwhelming the device."""
-    for i in range(0, len(coros), chunk_size):
-        await asyncio.gather(*coros[i : i + chunk_size])
 
 
 class State:
@@ -805,7 +796,7 @@ class State:
             _LOGGER.error("Connection lost requesting %s", cc)
             self._state[cc] = None
         except TimeoutError:
-            _LOGGER.error("Timeout requesting %s", cc)
+            _LOGGER.debug("Timeout requesting %s", cc)
 
     async def _update_presets(self) -> None:
         """Query tuner presets sequentially."""
@@ -826,7 +817,7 @@ class State:
                 _LOGGER.debug("Not connected skipping preset %s", preset)
                 return
             except TimeoutError:
-                _LOGGER.error("Timeout requesting preset %s", preset)
+                _LOGGER.debug("Timeout requesting preset %s", preset)
                 return
         self._presets = presets
 
@@ -861,7 +852,7 @@ class State:
                 _LOGGER.debug("Not connected skipping now_playing")
                 return
             except TimeoutError:
-                _LOGGER.error("Timeout requesting now_playing 0x%02X", sub_query)
+                _LOGGER.debug("Timeout requesting now_playing 0x%02X", sub_query)
                 return
         self._now_playing = now_playing
 
@@ -885,7 +876,7 @@ class State:
                 _LOGGER.debug("Not connected skipping software_version")
                 return
             except TimeoutError:
-                _LOGGER.error("Timeout requesting software_version 0x%02X", sub_query)
+                _LOGGER.debug("Timeout requesting software_version 0x%02X", sub_query)
                 return
         self._software_version = versions
 
@@ -906,25 +897,34 @@ class State:
         except ConnectionError:
             _LOGGER.error("Connection lost requesting amx")
         except TimeoutError:
-            _LOGGER.error("Timeout requesting amx")
+            _LOGGER.debug("Timeout requesting amx")
 
-    async def update(self) -> None:
-        """Poll the receiver for current state of all commands.
+    async def update(
+        self, progress: Callable[["State"], None] | None = None
+    ) -> None:
+        """Poll the receiver for current state of all commands sequentially.
 
-        For zone 1, queries all commands in parallel. For zone 2+, queries
-        power first and only polls remaining commands if the zone is on.
-        Clears state if the client is disconnected.
+        Queries commands one at a time to avoid overwhelming the receiver.
+        If *progress* is provided, it is called after each command completes
+        so callers can display intermediate results.
+
+        For zone 2+, queries power first and only polls remaining commands
+        if the zone is on. Clears state if the client is disconnected.
         """
         if self._client.connected:
             if self._zn == 1:
                 # Zone 1: always query power first (longer timeout for standby)
                 await self._update_command(CommandCodes.POWER, timeout=5.0)
+                if progress:
+                    progress(self)
 
                 if self.get_power() is True:
                     # Powered on: detect model if needed, then query all commands
                     if self._amxduet is None:
                         await self._update_amxduet()
-                    updates = [
+                        if progress:
+                            progress(self)
+                    for coro in [
                         self._update_command(CommandCodes.VOLUME),
                         self._update_command(CommandCodes.MUTE),
                         self._update_command(CommandCodes.CURRENT_SOURCE),
@@ -967,8 +967,10 @@ class State:
                         self._update_command(CommandCodes.TUNE),
                         self._update_command(CommandCodes.DAB_PROGRAM_TYPE_CATEGORY),
                         self._update_command(CommandCodes.HEADPHONES_OVERRIDE),
-                    ]
-                    await _gather_chunked(updates)
+                    ]:
+                        await coro
+                        if progress:
+                            progress(self)
                 else:
                     # Standby: only query device name for identification.
                     # All other commands are skipped to avoid timeouts.
@@ -977,13 +979,15 @@ class State:
             else:
                 # Zone 2+: poll power first, then only poll remaining
                 # commands if the zone is actually powered on. This avoids
-                # timeouts and retries for commands sent to inactive zones.
+                # timeouts for commands sent to inactive zones.
                 # AMX Duet is not queried here — Zone 1 handles device
                 # identification since it's the same physical device.
                 await self._update_command(CommandCodes.POWER, timeout=5.0)
+                if progress:
+                    progress(self)
 
                 if self.get_power() is True:
-                    updates = [
+                    for coro in [
                         self._update_command(CommandCodes.VOLUME),
                         self._update_command(CommandCodes.MUTE),
                         self._update_command(CommandCodes.CURRENT_SOURCE),
@@ -992,8 +996,10 @@ class State:
                         self._update_command(CommandCodes.RDS_INFORMATION),
                         self._update_command(CommandCodes.TUNER_PRESET),
                         self._update_presets(),
-                    ]
-                    await _gather_chunked(updates)
+                    ]:
+                        await coro
+                        if progress:
+                            progress(self)
         else:
             if self._state:
                 self._state = dict()
