@@ -87,7 +87,9 @@ async def test_set_dolby_audio(make_state, mode, expected_byte):
     """Sends correct byte for each Dolby Audio mode."""
     state = make_state()
     await state.set_dolby_audio(mode)
-    state._client.request.assert_called_with(1, CommandCodes.DOLBY_VOLUME, bytes([expected_byte]))
+    state._client.request.assert_called_with(
+        1, CommandCodes.DOLBY_VOLUME, bytes([expected_byte]), priority=0,
+    )
 
 
 # --- Tests for get_now_playing_info ---
@@ -162,7 +164,9 @@ async def test_set_room_eq_preset(make_state, preset):
     """Sends correct preset byte value."""
     state = make_state()
     await state.set_room_eq(preset)
-    state._client.request.assert_called_with(1, CommandCodes.ROOM_EQUALIZATION, bytes([preset]))
+    state._client.request.assert_called_with(
+        1, CommandCodes.ROOM_EQUALIZATION, bytes([preset]), priority=0, dedup_key=(1, CommandCodes.ROOM_EQUALIZATION),
+    )
 
 
 # --- Tests for get_hdmi_settings ---
@@ -536,14 +540,14 @@ async def test_set_power_on_direct_write(make_state):
     """SA series uses direct write for power on."""
     state = make_state(api_model=ApiModel.APISA_SERIES)
     await state.set_power(True)
-    state._client.request.assert_called_with(1, CommandCodes.POWER, bytes([0x01]))
+    state._client.request.assert_called_with(1, CommandCodes.POWER, bytes([0x01]), priority=0)
 
 
 async def test_set_power_off_direct_write(make_state):
     """SA series uses direct write for power off and seeds state."""
     state = make_state(api_model=ApiModel.APISA_SERIES)
     await state.set_power(False)
-    state._client.request.assert_called_with(1, CommandCodes.POWER, bytes([0x00]))
+    state._client.request.assert_called_with(1, CommandCodes.POWER, bytes([0x00]), priority=0)
     assert state._state[CommandCodes.POWER] == bytes([0])
 
 
@@ -568,21 +572,23 @@ async def test_set_volume(make_state):
     """Sends correct volume byte."""
     state = make_state()
     await state.set_volume(42)
-    state._client.request.assert_called_with(1, CommandCodes.VOLUME, bytes([42]))
+    state._client.request.assert_called_with(
+        1, CommandCodes.VOLUME, bytes([42]), priority=0, dedup_key=(1, CommandCodes.VOLUME),
+    )
 
 
 async def test_inc_volume_step_supported(make_state):
     """ST series uses volume step command 0xF1."""
     state = make_state(api_model=ApiModel.APIST_SERIES)
     await state.inc_volume()
-    state._client.request.assert_called_with(1, CommandCodes.VOLUME, bytes([0xF1]))
+    state._client.request.assert_called_with(1, CommandCodes.VOLUME, bytes([0xF1]), priority=0)
 
 
 async def test_dec_volume_step_supported(make_state):
     """ST series uses volume step command 0xF2."""
     state = make_state(api_model=ApiModel.APIST_SERIES)
     await state.dec_volume()
-    state._client.request.assert_called_with(1, CommandCodes.VOLUME, bytes([0xF2]))
+    state._client.request.assert_called_with(1, CommandCodes.VOLUME, bytes([0xF2]), priority=0)
 
 
 async def test_inc_volume_rc5(make_state):
@@ -630,14 +636,14 @@ async def test_set_mute_direct_write(make_state):
     """SA series uses direct write for mute."""
     state = make_state(api_model=ApiModel.APISA_SERIES)
     await state.set_mute(True)
-    state._client.request.assert_called_with(1, CommandCodes.MUTE, bytes([0x00]))
+    state._client.request.assert_called_with(1, CommandCodes.MUTE, bytes([0x00]), priority=0)
 
 
 async def test_set_unmute_direct_write(make_state):
     """SA series uses direct write for unmute."""
     state = make_state(api_model=ApiModel.APISA_SERIES)
     await state.set_mute(False)
-    state._client.request.assert_called_with(1, CommandCodes.MUTE, bytes([0x01]))
+    state._client.request.assert_called_with(1, CommandCodes.MUTE, bytes([0x01]), priority=0)
 
 
 async def test_set_mute_rc5_with_followup_query(make_state):
@@ -741,7 +747,7 @@ async def test_int_setter(make_state, setter, cc, value):
     """Integer setters send correct byte."""
     state = make_state()
     await getattr(state, setter)(value)
-    state._client.request.assert_called_with(1, cc, bytes([value]))
+    state._client.request.assert_called_with(1, cc, bytes([value]), priority=0, dedup_key=(1, cc))
 
 
 # --- Tests for string getters ---
@@ -803,7 +809,7 @@ async def test_set_tuner_preset(make_state):
     """Sends correct preset byte."""
     state = make_state()
     await state.set_tuner_preset(3)
-    state._client.request.assert_called_with(1, CommandCodes.TUNER_PRESET, bytes([3]))
+    state._client.request.assert_called_with(1, CommandCodes.TUNER_PRESET, bytes([3]), priority=0)
 
 
 # --- Tests for _listen callback ---
@@ -1474,7 +1480,8 @@ async def test_set_analog_digital(make_state):
     state = make_state()
     await state.set_analog_digital(1)
     state._client.request.assert_called_once_with(
-        state._zn, CommandCodes.SELECT_ANALOG_DIGITAL, bytes([1])
+        state._zn, CommandCodes.SELECT_ANALOG_DIGITAL, bytes([1]),
+        priority=0, dedup_key=(1, CommandCodes.SELECT_ANALOG_DIGITAL),
     )
 
 
@@ -1506,7 +1513,8 @@ async def test_set_sub_stereo_trim(make_state):
     state = make_state()
     await state.set_sub_stereo_trim(0x83)
     state._client.request.assert_called_once_with(
-        state._zn, CommandCodes.SUB_STEREO_TRIM, bytes([0x83])
+        state._zn, CommandCodes.SUB_STEREO_TRIM, bytes([0x83]),
+        priority=0, dedup_key=(1, CommandCodes.SUB_STEREO_TRIM),
     )
 
 
@@ -1532,7 +1540,7 @@ async def test_set_zone1_osd_on(make_state):
     state = make_state()
     await state.set_zone1_osd(True)
     state._client.request.assert_called_once_with(
-        state._zn, CommandCodes.ZONE_1_OSD_ON_OFF, bytes([0xF1])
+        state._zn, CommandCodes.ZONE_1_OSD_ON_OFF, bytes([0xF1]), priority=0,
     )
 
 
@@ -1541,7 +1549,7 @@ async def test_set_zone1_osd_off(make_state):
     state = make_state()
     await state.set_zone1_osd(False)
     state._client.request.assert_called_once_with(
-        state._zn, CommandCodes.ZONE_1_OSD_ON_OFF, bytes([0xF2])
+        state._zn, CommandCodes.ZONE_1_OSD_ON_OFF, bytes([0xF2]), priority=0,
     )
 
 
@@ -1567,7 +1575,8 @@ async def test_set_video_output_switching(make_state):
     state = make_state()
     await state.set_video_output_switching(4)
     state._client.request.assert_called_once_with(
-        state._zn, CommandCodes.VIDEO_OUTPUT_SWITCHING, bytes([4])
+        state._zn, CommandCodes.VIDEO_OUTPUT_SWITCHING, bytes([4]),
+        priority=0, dedup_key=(1, CommandCodes.VIDEO_OUTPUT_SWITCHING),
     )
 
 
@@ -1603,7 +1612,7 @@ async def test_set_imax_enhanced(make_state, mode, cmd_byte):
     state = make_state()
     await state.set_imax_enhanced(mode)
     state._client.request.assert_called_once_with(
-        state._zn, CommandCodes.VIDEO_INPUT_TYPE, bytes([cmd_byte])
+        state._zn, CommandCodes.VIDEO_INPUT_TYPE, bytes([cmd_byte]), priority=0,
     )
 
 
@@ -1655,7 +1664,9 @@ async def test_set_input_name(make_state):
     """Sends ASCII-encoded name."""
     state = make_state()
     await state.set_input_name("BDP300")
-    state._client.request.assert_called_once_with(state._zn, CommandCodes.INPUT_NAME, b"BDP300")
+    state._client.request.assert_called_once_with(
+        state._zn, CommandCodes.INPUT_NAME, b"BDP300", priority=0,
+    )
 
 
 async def test_set_input_name_rejects_too_long(make_state):
@@ -1687,7 +1698,7 @@ async def test_set_display_info_type(make_state):
     state = make_state()
     await state.set_display_info_type(2)
     state._client.request.assert_called_once_with(
-        state._zn, CommandCodes.DISPLAY_INFORMATION_TYPE, bytes([2])
+        state._zn, CommandCodes.DISPLAY_INFORMATION_TYPE, bytes([2]), priority=0,
     )
 
 
@@ -1711,14 +1722,14 @@ async def test_tune_up(make_state):
     """Sends 0x01 to increment frequency."""
     state = make_state()
     await state.tune_up()
-    state._client.request.assert_called_once_with(state._zn, CommandCodes.TUNE, bytes([0x01]))
+    state._client.request.assert_called_once_with(state._zn, CommandCodes.TUNE, bytes([0x01]), priority=0)
 
 
 async def test_tune_down(make_state):
     """Sends 0x00 to decrement frequency."""
     state = make_state()
     await state.tune_down()
-    state._client.request.assert_called_once_with(state._zn, CommandCodes.TUNE, bytes([0x00]))
+    state._client.request.assert_called_once_with(state._zn, CommandCodes.TUNE, bytes([0x00]), priority=0)
 
 
 # --- Tests for get_dab_program_type ---
@@ -1759,7 +1770,7 @@ async def test_set_headphone_override(make_state):
     state = make_state()
     await state.set_headphone_override(True)
     state._client.request.assert_called_once_with(
-        state._zn, CommandCodes.HEADPHONES_OVERRIDE, bytes([0x01])
+        state._zn, CommandCodes.HEADPHONES_OVERRIDE, bytes([0x01]), priority=0,
     )
 
 
@@ -1768,7 +1779,7 @@ async def test_set_headphone_override_clear(make_state):
     state = make_state()
     await state.set_headphone_override(False)
     state._client.request.assert_called_once_with(
-        state._zn, CommandCodes.HEADPHONES_OVERRIDE, bytes([0x00])
+        state._zn, CommandCodes.HEADPHONES_OVERRIDE, bytes([0x00]), priority=0,
     )
 
 

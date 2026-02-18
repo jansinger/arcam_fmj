@@ -1,5 +1,6 @@
 """Tests for utils."""
 
+import asyncio
 import time
 
 import pytest
@@ -145,6 +146,79 @@ async def test_retry_unexpected():
     with pytest.raises(ValueError):
         await tester()
     assert calls == 1
+
+
+async def test_throttle_priority_ordering():
+    """Test that higher priority (lower number) requests are dispatched first."""
+    throttle = Throttle(0.01)
+    order = []
+
+    async def acquire(priority, label):
+        await throttle.get(priority=priority)
+        order.append(label)
+
+    # First request starts immediately
+    await throttle.get()
+
+    # Queue three requests with different priorities while throttle is busy
+    tasks = [
+        asyncio.create_task(acquire(2, "poll")),
+        asyncio.create_task(acquire(0, "user")),
+        asyncio.create_task(acquire(1, "normal")),
+    ]
+    # Let them all register in the queue
+    await asyncio.sleep(0)
+    await asyncio.gather(*tasks)
+
+    assert order == ["user", "normal", "poll"]
+
+
+async def test_throttle_dedup_cancels_previous():
+    """Test that dedup_key cancels a previous queued entry with same key."""
+    throttle = Throttle(0.01)
+
+    # First call to occupy the throttle
+    await throttle.get()
+
+    # Queue two requests with the same dedup_key
+    key = (1, "VOLUME")
+    task1 = asyncio.create_task(throttle.get(priority=0, dedup_key=key))
+    await asyncio.sleep(0)
+    task2 = asyncio.create_task(throttle.get(priority=0, dedup_key=key))
+    await asyncio.sleep(0)
+
+    # task1 should be cancelled, task2 should complete
+    with pytest.raises(asyncio.CancelledError):
+        await task1
+
+    await task2  # Should complete without error
+
+
+async def test_throttle_dedup_different_keys_both_run():
+    """Test that different dedup_keys do not cancel each other."""
+    throttle = Throttle(0.01)
+    completed = []
+
+    await throttle.get()
+
+    async def acquire(key, label):
+        await throttle.get(priority=0, dedup_key=key)
+        completed.append(label)
+
+    tasks = [
+        asyncio.create_task(acquire((1, "VOLUME"), "vol")),
+        asyncio.create_task(acquire((1, "MUTE"), "mute")),
+    ]
+    await asyncio.gather(*tasks)
+    assert set(completed) == {"vol", "mute"}
+
+
+async def test_throttle_backwards_compatible():
+    """Test that get() with no arguments still works (backwards compat)."""
+    throttle = Throttle(0.01)
+    # Should work without priority or dedup_key
+    await throttle.get()
+    await throttle.get()
 
 
 async def test_get_uniqueid_from_device_description(aiohttp_client):

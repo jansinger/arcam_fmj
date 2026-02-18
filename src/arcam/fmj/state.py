@@ -57,6 +57,19 @@ from .client import Client
 _LOGGER = logging.getLogger(__name__)
 _T = TypeVar("_T")
 
+_PRIORITY_USER = 0
+_PRIORITY_POLL = 2
+_POLL_TIMEOUT = 1.5
+
+_ESSENTIAL_COMMANDS = frozenset({
+    CommandCodes.VOLUME,
+    CommandCodes.MUTE,
+    CommandCodes.CURRENT_SOURCE,
+    CommandCodes.DECODE_MODE_STATUS_2CH,
+    CommandCodes.DECODE_MODE_STATUS_MCH,
+    CommandCodes.INCOMING_AUDIO_FORMAT,
+})
+
 
 class State:
     """Cached state for a single receiver zone.
@@ -233,11 +246,23 @@ class State:
         return int.from_bytes(value, "big")
 
     async def _set_int(
-        self, cc: CommandCodes, value: int, min_val: int = 0, max_val: int = 255
+        self,
+        cc: CommandCodes,
+        value: int,
+        min_val: int = 0,
+        max_val: int = 255,
+        *,
+        dedup: bool = True,
     ) -> None:
         if not min_val <= value <= max_val:
             raise ValueError(f"{cc.name} value {value} out of range [{min_val}, {max_val}]")
-        await self._client.request(self._zn, cc, bytes([value]))
+        await self._client.request(
+            self._zn,
+            cc,
+            bytes([value]),
+            priority=_PRIORITY_USER,
+            dedup_key=(self._zn, cc) if dedup else None,
+        )
 
     def get_incoming_video_parameters(self) -> VideoParameters | None:
         value = self._state.get(CommandCodes.INCOMING_VIDEO_PARAMETERS)
@@ -279,7 +304,10 @@ class State:
 
     async def set_decode_mode_2ch(self, mode: DecodeMode2CH) -> None:
         command = self.get_rc5code(RC5CODE_DECODE_MODE_2CH, mode)
-        await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
+        await self._client.request(
+            self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command,
+            priority=_PRIORITY_USER,
+        )
 
     def get_decode_mode_mch(self) -> DecodeModeMCH | None:
         value = self._state.get(CommandCodes.DECODE_MODE_STATUS_MCH)
@@ -289,7 +317,10 @@ class State:
 
     async def set_decode_mode_mch(self, mode: DecodeModeMCH) -> None:
         command = self.get_rc5code(RC5CODE_DECODE_MODE_MCH, mode)
-        await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
+        await self._client.request(
+            self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command,
+            priority=_PRIORITY_USER,
+        )
 
     _2CH_CONFIGS = frozenset(
         {
@@ -382,18 +413,27 @@ class State:
             bool_to_hex = 0x01 if power else 0x00
             if not power:
                 self._state[CommandCodes.POWER] = bytes([0])
-            await self._client.request(self._zn, CommandCodes.POWER, bytes([bool_to_hex]))
+            await self._client.request(
+                self._zn, CommandCodes.POWER, bytes([bool_to_hex]),
+                priority=_PRIORITY_USER,
+            )
         else:
             command = self.get_rc5code(RC5CODE_POWER, power)
             if power:
-                await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
+                await self._client.request(
+                    self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command,
+                    priority=_PRIORITY_USER,
+                )
             else:
                 # seed with a response, since device might not
                 # respond in timely fashion, so let's just
                 # assume we succeeded until response comes
                 # back.
                 self._state[CommandCodes.POWER] = bytes([0])
-                await self._client.send(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
+                await self._client.send(
+                    self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command,
+                    priority=_PRIORITY_USER,
+                )
 
     def get_menu(self) -> MenuCodes | None:
         value = self._state.get(CommandCodes.MENU)
@@ -412,14 +452,23 @@ class State:
         """Set mute state. Uses direct write or RC5+re-query depending on model."""
         if self._api_model in MUTE_WRITE_SUPPORTED:
             bool_to_hex = 0x00 if mute else 0x01
-            await self._client.request(self._zn, CommandCodes.MUTE, bytes([bool_to_hex]))
+            await self._client.request(
+                self._zn, CommandCodes.MUTE, bytes([bool_to_hex]),
+                priority=_PRIORITY_USER,
+            )
         else:
             command = self.get_rc5code(RC5CODE_MUTE, mute)
-            await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
+            await self._client.request(
+                self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command,
+                priority=_PRIORITY_USER,
+            )
             # Query mute state after RC5 command to update _state[MUTE]
             # RC5 commands don't update the MUTE state directly, only SIMULATE_RC5_IR_COMMAND
             try:
-                data = await self._client.request(self._zn, CommandCodes.MUTE, bytes([0xF0]))
+                data = await self._client.request(
+                    self._zn, CommandCodes.MUTE, bytes([0xF0]),
+                    priority=_PRIORITY_USER,
+                )
                 self._state[CommandCodes.MUTE] = data
             except (
                 ResponseException,
@@ -452,10 +501,16 @@ class State:
         """Switch to the given input source."""
         if self._api_model in SOURCE_WRITE_SUPPORTED:
             value = src.to_bytes(self._api_model, self._zn)
-            await self._client.request(self._zn, CommandCodes.CURRENT_SOURCE, value)
+            await self._client.request(
+                self._zn, CommandCodes.CURRENT_SOURCE, value,
+                priority=_PRIORITY_USER,
+            )
         else:
             command = self.get_rc5code(RC5CODE_SOURCE, src)
-            await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
+            await self._client.request(
+                self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command,
+                priority=_PRIORITY_USER,
+            )
 
     def get_volume(self) -> int | None:
         """Return the current volume level (0-99), or None if unknown."""
@@ -468,18 +523,30 @@ class State:
     async def inc_volume(self) -> None:
         """Increment volume by one step."""
         if self._api_model in VOLUME_STEP_SUPPORTED:
-            await self._client.request(self._zn, CommandCodes.VOLUME, bytes([0xF1]))
+            await self._client.request(
+                self._zn, CommandCodes.VOLUME, bytes([0xF1]),
+                priority=_PRIORITY_USER,
+            )
         else:
             command = self.get_rc5code(RC5CODE_VOLUME, True)
-            await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
+            await self._client.request(
+                self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command,
+                priority=_PRIORITY_USER,
+            )
 
     async def dec_volume(self) -> None:
         """Decrement volume by one step."""
         if self._api_model in VOLUME_STEP_SUPPORTED:
-            await self._client.request(self._zn, CommandCodes.VOLUME, bytes([0xF2]))
+            await self._client.request(
+                self._zn, CommandCodes.VOLUME, bytes([0xF2]),
+                priority=_PRIORITY_USER,
+            )
         else:
             command = self.get_rc5code(RC5CODE_VOLUME, False)
-            await self._client.request(self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command)
+            await self._client.request(
+                self._zn, CommandCodes.SIMULATE_RC5_IR_COMMAND, command,
+                priority=_PRIORITY_USER,
+            )
 
     def get_bass(self) -> int | None:
         """Return bass EQ level (0-255), or None if unknown."""
@@ -561,7 +628,10 @@ class State:
 
     async def set_dolby_audio(self, mode: DolbyAudioMode) -> None:
         """Set Dolby Audio mode."""
-        await self._client.request(self._zn, CommandCodes.DOLBY_VOLUME, bytes([mode]))
+        await self._client.request(
+            self._zn, CommandCodes.DOLBY_VOLUME, bytes([mode]),
+            priority=_PRIORITY_USER,
+        )
 
     def get_now_playing_info(self) -> NowPlayingInfo | None:
         """Return now-playing info (title, artist, album, etc.), or None."""
@@ -642,7 +712,10 @@ class State:
     async def set_zone1_osd(self, on: bool) -> None:
         """Set Zone 1 OSD on/off. Sends 0xF1=on, 0xF2=off."""
         cmd_byte = 0xF1 if on else 0xF2
-        await self._client.request(self._zn, CommandCodes.ZONE_1_OSD_ON_OFF, bytes([cmd_byte]))
+        await self._client.request(
+            self._zn, CommandCodes.ZONE_1_OSD_ON_OFF, bytes([cmd_byte]),
+            priority=_PRIORITY_USER,
+        )
 
     def get_video_output_switching(self) -> int | None:
         """Return video output switching (2=Out1, 3=Out2, 4=Out1&2), or None."""
@@ -664,7 +737,10 @@ class State:
         if not 0 <= mode <= 2:
             raise ValueError(f"IMAX_ENHANCED value {mode} out of range [0, 2]")
         cmd_map = {0: 0xF3, 1: 0xF2, 2: 0xF1}
-        await self._client.request(self._zn, CommandCodes.VIDEO_INPUT_TYPE, bytes([cmd_map[mode]]))
+        await self._client.request(
+            self._zn, CommandCodes.VIDEO_INPUT_TYPE, bytes([cmd_map[mode]]),
+            priority=_PRIORITY_USER,
+        )
 
     def get_software_version(self) -> dict[int, tuple[int, int]]:
         """Return software versions as {sub_query: (major, minor)}.
@@ -684,7 +760,10 @@ class State:
         """Set custom input name (max 10 ASCII characters)."""
         if len(name) > 10:
             raise ValueError(f"Input name must be max 10 characters, got {len(name)}")
-        await self._client.request(self._zn, CommandCodes.INPUT_NAME, name.encode("ascii"))
+        await self._client.request(
+            self._zn, CommandCodes.INPUT_NAME, name.encode("ascii"),
+            priority=_PRIORITY_USER,
+        )
 
     def get_display_info_type(self) -> int | None:
         """Return VFD display info type (source-dependent), or None."""
@@ -693,7 +772,8 @@ class State:
     async def set_display_info_type(self, display_type: int) -> None:
         """Set VFD display info type (source-dependent, 0x00-0x05)."""
         await self._client.request(
-            self._zn, CommandCodes.DISPLAY_INFORMATION_TYPE, bytes([display_type])
+            self._zn, CommandCodes.DISPLAY_INFORMATION_TYPE, bytes([display_type]),
+            priority=_PRIORITY_USER,
         )
 
     def get_tune(self) -> tuple[int, int] | None:
@@ -705,11 +785,17 @@ class State:
 
     async def tune_up(self) -> None:
         """Increment tuner frequency by one step (0.05 MHz)."""
-        await self._client.request(self._zn, CommandCodes.TUNE, bytes([0x01]))
+        await self._client.request(
+            self._zn, CommandCodes.TUNE, bytes([0x01]),
+            priority=_PRIORITY_USER,
+        )
 
     async def tune_down(self) -> None:
         """Decrement tuner frequency by one step (0.05 MHz)."""
-        await self._client.request(self._zn, CommandCodes.TUNE, bytes([0x00]))
+        await self._client.request(
+            self._zn, CommandCodes.TUNE, bytes([0x00]),
+            priority=_PRIORITY_USER,
+        )
 
     def get_dab_program_type(self) -> str | None:
         """Return DAB programme type/category (16-byte ASCII), or None."""
@@ -728,7 +814,8 @@ class State:
     async def set_headphone_override(self, override: bool) -> None:
         """Set headphone override (True=speakers on, False=speakers muted if headphones)."""
         await self._client.request(
-            self._zn, CommandCodes.HEADPHONES_OVERRIDE, bytes([0x01 if override else 0x00])
+            self._zn, CommandCodes.HEADPHONES_OVERRIDE, bytes([0x01 if override else 0x00]),
+            priority=_PRIORITY_USER,
         )
 
     def get_dab_station(self) -> str | None:
@@ -754,7 +841,10 @@ class State:
 
     async def set_tuner_preset(self, preset: int) -> None:
         """Select a tuner preset by index."""
-        await self._client.request(self._zn, CommandCodes.TUNER_PRESET, bytes([preset]))
+        await self._client.request(
+            self._zn, CommandCodes.TUNER_PRESET, bytes([preset]),
+            priority=_PRIORITY_USER,
+        )
 
     def get_tuner_preset(self) -> int | None:
         """Return current tuner preset index, or None if no preset active."""
@@ -782,7 +872,12 @@ class State:
         if not self._supports_command(cc):
             return
         try:
-            data = await self._client.request(self._zn, cc, bytes([0xF0]), timeout=timeout)
+            data = await self._client.request(
+                self._zn, cc, bytes([0xF0]),
+                timeout=timeout or _POLL_TIMEOUT,
+                priority=_PRIORITY_POLL,
+                retries=0,
+            )
             self._state[cc] = data
         except UnsupportedZone:
             _LOGGER.debug("Unsupported zone %s for %s", self._zn, cc)
@@ -804,7 +899,10 @@ class State:
         for preset in range(1, 51):
             try:
                 data = await self._client.request(
-                    self._zn, CommandCodes.PRESET_DETAIL, bytes([preset])
+                    self._zn, CommandCodes.PRESET_DETAIL, bytes([preset]),
+                    priority=_PRIORITY_POLL,
+                    retries=0,
+                    timeout=_POLL_TIMEOUT,
                 )
                 if data != b"\x00":
                     presets[preset] = PresetDetail.from_bytes(data)
@@ -833,7 +931,10 @@ class State:
         for sub_query in (0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5):
             try:
                 data = await self._client.request(
-                    self._zn, CommandCodes.NOW_PLAYING_INFO, bytes([sub_query])
+                    self._zn, CommandCodes.NOW_PLAYING_INFO, bytes([sub_query]),
+                    priority=_PRIORITY_POLL,
+                    retries=0,
+                    timeout=_POLL_TIMEOUT,
                 )
                 if sub_query in (0xF4, 0xF5):
                     # Sample rate and encoder are byte enums
@@ -862,7 +963,10 @@ class State:
         for sub_query in (0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5):
             try:
                 data = await self._client.request(
-                    self._zn, CommandCodes.SOFTWARE_VERSION, bytes([sub_query])
+                    self._zn, CommandCodes.SOFTWARE_VERSION, bytes([sub_query]),
+                    priority=_PRIORITY_POLL,
+                    retries=0,
+                    timeout=_POLL_TIMEOUT,
                 )
                 if len(data) >= 3:
                     versions[data[0]] = (data[1], data[2])
@@ -883,7 +987,12 @@ class State:
     async def _update_amxduet(self, *, timeout: float | None = None) -> None:
         """Query AMX Duet device identification and detect API model."""
         try:
-            data = await self._client.request_raw(AmxDuetRequest(), timeout=timeout)
+            data = await self._client.request_raw(
+                AmxDuetRequest(),
+                timeout=timeout or _POLL_TIMEOUT,
+                priority=_PRIORITY_POLL,
+                retries=0,
+            )
             self._amxduet = data
 
             detected = detect_api_model(data.device_model)
@@ -900,7 +1009,11 @@ class State:
             _LOGGER.debug("Timeout requesting amx")
 
     async def update(
-        self, progress: Callable[["State"], None] | None = None
+        self,
+        progress: Callable[["State"], None] | None = None,
+        *,
+        skip_known: bool = False,
+        max_duration: float = 30.0,
     ) -> None:
         """Poll the receiver for current state of all commands sequentially.
 
@@ -908,102 +1021,176 @@ class State:
         If *progress* is provided, it is called after each command completes
         so callers can display intermediate results.
 
+        If *skip_known* is True, deferred commands already in the cache
+        (populated by real-time listener updates) are skipped. Essential
+        commands (volume, mute, source, decode modes, audio format) are
+        always polled regardless.
+
+        *max_duration* caps the total time for the entire poll cycle.
+
         For zone 2+, queries power first and only polls remaining commands
         if the zone is on. Clears state if the client is disconnected.
         """
-        if self._client.connected:
-            if self._zn == 1:
-                # Zone 1: always query power first (longer timeout for standby)
-                await self._update_command(CommandCodes.POWER, timeout=5.0)
-                if progress:
-                    progress(self)
-
-                if self.get_power() is True:
-                    # Powered on: detect model if needed, then query all commands
-                    if self._amxduet is None:
-                        await self._update_amxduet()
-                        if progress:
-                            progress(self)
-                    for coro in [
-                        self._update_command(CommandCodes.VOLUME),
-                        self._update_command(CommandCodes.MUTE),
-                        self._update_command(CommandCodes.CURRENT_SOURCE),
-                        self._update_command(CommandCodes.MENU),
-                        self._update_command(CommandCodes.DECODE_MODE_STATUS_2CH),
-                        self._update_command(CommandCodes.DECODE_MODE_STATUS_MCH),
-                        self._update_command(CommandCodes.INCOMING_VIDEO_PARAMETERS),
-                        self._update_command(CommandCodes.INCOMING_AUDIO_FORMAT),
-                        self._update_command(CommandCodes.INCOMING_AUDIO_SAMPLE_RATE),
-                        self._update_command(CommandCodes.DAB_STATION),
-                        self._update_command(CommandCodes.DLS_PDT_INFO),
-                        self._update_command(CommandCodes.RDS_INFORMATION),
-                        self._update_command(CommandCodes.TUNER_PRESET),
-                        self._update_presets(),
-                        self._update_command(CommandCodes.BASS_EQUALIZATION),
-                        self._update_command(CommandCodes.TREBLE_EQUALIZATION),
-                        self._update_command(CommandCodes.BALANCE),
-                        self._update_command(CommandCodes.SUBWOOFER_TRIM),
-                        self._update_command(CommandCodes.LIPSYNC_DELAY),
-                        self._update_command(CommandCodes.DISPLAY_BRIGHTNESS),
-                        self._update_command(CommandCodes.ROOM_EQUALIZATION),
-                        self._update_command(CommandCodes.COMPRESSION),
-                        self._update_command(CommandCodes.NETWORK_PLAYBACK_STATUS),
-                        self._update_command(CommandCodes.DOLBY_VOLUME),
-                        self._update_command(CommandCodes.HDMI_SETTINGS),
-                        self._update_command(CommandCodes.ZONE_SETTINGS),
-                        self._update_command(CommandCodes.ROOM_EQ_NAMES),
-                        self._update_command(CommandCodes.VIDEO_OUTPUT_FRAME_RATE),
-                        self.update_now_playing(),
-                        self._update_command(CommandCodes.HEADPHONES),
-                        self._update_command(CommandCodes.DIRECT_MODE_STATUS),
-                        self._update_command(CommandCodes.SELECT_ANALOG_DIGITAL),
-                        self._update_command(CommandCodes.SUB_STEREO_TRIM),
-                        self._update_command(CommandCodes.ZONE_1_OSD_ON_OFF),
-                        self._update_command(CommandCodes.VIDEO_OUTPUT_SWITCHING),
-                        self._update_command(CommandCodes.VIDEO_INPUT_TYPE),
-                        self._update_software_version(),
-                        self._update_command(CommandCodes.INPUT_NAME),
-                        self._update_command(CommandCodes.DISPLAY_INFORMATION_TYPE),
-                        self._update_command(CommandCodes.TUNE),
-                        self._update_command(CommandCodes.DAB_PROGRAM_TYPE_CATEGORY),
-                        self._update_command(CommandCodes.HEADPHONES_OVERRIDE),
-                    ]:
-                        await coro
-                        if progress:
-                            progress(self)
-                else:
-                    # Standby: only query device name for identification.
-                    # All other commands are skipped to avoid timeouts.
-                    if self._amxduet is None:
-                        await self._update_amxduet(timeout=5.0)
-            else:
-                # Zone 2+: poll power first, then only poll remaining
-                # commands if the zone is actually powered on. This avoids
-                # timeouts for commands sent to inactive zones.
-                # AMX Duet is not queried here — Zone 1 handles device
-                # identification since it's the same physical device.
-                await self._update_command(CommandCodes.POWER, timeout=5.0)
-                if progress:
-                    progress(self)
-
-                if self.get_power() is True:
-                    for coro in [
-                        self._update_command(CommandCodes.VOLUME),
-                        self._update_command(CommandCodes.MUTE),
-                        self._update_command(CommandCodes.CURRENT_SOURCE),
-                        self._update_command(CommandCodes.DAB_STATION),
-                        self._update_command(CommandCodes.DLS_PDT_INFO),
-                        self._update_command(CommandCodes.RDS_INFORMATION),
-                        self._update_command(CommandCodes.TUNER_PRESET),
-                        self._update_presets(),
-                    ]:
-                        await coro
-                        if progress:
-                            progress(self)
-        else:
+        if not self._client.connected:
             if self._state:
                 self._state = dict()
             if self._now_playing:
                 self._now_playing = dict()
             if self._software_version:
                 self._software_version = dict()
+            return
+
+        try:
+            async with asyncio.timeout(max_duration):
+                await self._update_inner(progress=progress, skip_known=skip_known)
+        except TimeoutError:
+            _LOGGER.warning(
+                "Update cycle for zone %s timed out after %.1fs", self._zn, max_duration
+            )
+
+    def _should_poll(self, cc: CommandCodes, skip_known: bool) -> bool:
+        """Return True if this command should be polled."""
+        if cc in _ESSENTIAL_COMMANDS:
+            return True
+        if skip_known and cc in self._state:
+            return False
+        return True
+
+    async def _update_inner(
+        self,
+        progress: Callable[["State"], None] | None = None,
+        skip_known: bool = False,
+    ) -> None:
+        if self._zn == 1:
+            # Zone 1: always query power first (longer timeout for standby)
+            await self._update_command(CommandCodes.POWER, timeout=5.0)
+            if progress:
+                progress(self)
+
+            if self.get_power() is True:
+                # Powered on: detect model if needed, then query all commands
+                if self._amxduet is None:
+                    await self._update_amxduet()
+                    if progress:
+                        progress(self)
+
+                all_commands = [
+                    CommandCodes.VOLUME,
+                    CommandCodes.MUTE,
+                    CommandCodes.CURRENT_SOURCE,
+                    CommandCodes.MENU,
+                    CommandCodes.DECODE_MODE_STATUS_2CH,
+                    CommandCodes.DECODE_MODE_STATUS_MCH,
+                    CommandCodes.INCOMING_VIDEO_PARAMETERS,
+                    CommandCodes.INCOMING_AUDIO_FORMAT,
+                    CommandCodes.INCOMING_AUDIO_SAMPLE_RATE,
+                    CommandCodes.DAB_STATION,
+                    CommandCodes.DLS_PDT_INFO,
+                    CommandCodes.RDS_INFORMATION,
+                    CommandCodes.TUNER_PRESET,
+                ]
+                for cc in all_commands:
+                    if self._should_poll(cc, skip_known):
+                        await self._update_command(cc)
+                        if progress:
+                            progress(self)
+
+                if not skip_known or not self._presets:
+                    await self._update_presets()
+                    if progress:
+                        progress(self)
+
+                deferred_commands = [
+                    CommandCodes.BASS_EQUALIZATION,
+                    CommandCodes.TREBLE_EQUALIZATION,
+                    CommandCodes.BALANCE,
+                    CommandCodes.SUBWOOFER_TRIM,
+                    CommandCodes.LIPSYNC_DELAY,
+                    CommandCodes.DISPLAY_BRIGHTNESS,
+                    CommandCodes.ROOM_EQUALIZATION,
+                    CommandCodes.COMPRESSION,
+                    CommandCodes.NETWORK_PLAYBACK_STATUS,
+                    CommandCodes.DOLBY_VOLUME,
+                    CommandCodes.HDMI_SETTINGS,
+                    CommandCodes.ZONE_SETTINGS,
+                    CommandCodes.ROOM_EQ_NAMES,
+                    CommandCodes.VIDEO_OUTPUT_FRAME_RATE,
+                ]
+                for cc in deferred_commands:
+                    if self._should_poll(cc, skip_known):
+                        await self._update_command(cc)
+                        if progress:
+                            progress(self)
+
+                if not skip_known or not self._now_playing:
+                    await self.update_now_playing()
+                    if progress:
+                        progress(self)
+
+                deferred_commands_2 = [
+                    CommandCodes.HEADPHONES,
+                    CommandCodes.DIRECT_MODE_STATUS,
+                    CommandCodes.SELECT_ANALOG_DIGITAL,
+                    CommandCodes.SUB_STEREO_TRIM,
+                    CommandCodes.ZONE_1_OSD_ON_OFF,
+                    CommandCodes.VIDEO_OUTPUT_SWITCHING,
+                    CommandCodes.VIDEO_INPUT_TYPE,
+                ]
+                for cc in deferred_commands_2:
+                    if self._should_poll(cc, skip_known):
+                        await self._update_command(cc)
+                        if progress:
+                            progress(self)
+
+                if not skip_known or not self._software_version:
+                    await self._update_software_version()
+                    if progress:
+                        progress(self)
+
+                trailing_commands = [
+                    CommandCodes.INPUT_NAME,
+                    CommandCodes.DISPLAY_INFORMATION_TYPE,
+                    CommandCodes.TUNE,
+                    CommandCodes.DAB_PROGRAM_TYPE_CATEGORY,
+                    CommandCodes.HEADPHONES_OVERRIDE,
+                ]
+                for cc in trailing_commands:
+                    if self._should_poll(cc, skip_known):
+                        await self._update_command(cc)
+                        if progress:
+                            progress(self)
+            else:
+                # Standby: only query device name for identification.
+                # All other commands are skipped to avoid timeouts.
+                if self._amxduet is None:
+                    await self._update_amxduet(timeout=5.0)
+        else:
+            # Zone 2+: poll power first, then only poll remaining
+            # commands if the zone is actually powered on. This avoids
+            # timeouts for commands sent to inactive zones.
+            # AMX Duet is not queried here — Zone 1 handles device
+            # identification since it's the same physical device.
+            await self._update_command(CommandCodes.POWER, timeout=5.0)
+            if progress:
+                progress(self)
+
+            if self.get_power() is True:
+                zone2_commands = [
+                    CommandCodes.VOLUME,
+                    CommandCodes.MUTE,
+                    CommandCodes.CURRENT_SOURCE,
+                    CommandCodes.DAB_STATION,
+                    CommandCodes.DLS_PDT_INFO,
+                    CommandCodes.RDS_INFORMATION,
+                    CommandCodes.TUNER_PRESET,
+                ]
+                for cc in zone2_commands:
+                    if self._should_poll(cc, skip_known):
+                        await self._update_command(cc)
+                        if progress:
+                            progress(self)
+
+                if not skip_known or not self._presets:
+                    await self._update_presets()
+                    if progress:
+                        progress(self)

@@ -30,7 +30,7 @@ from . import (
     read_response,
     write_packet,
 )
-from .utils import Throttle, async_retry
+from .utils import Throttle
 
 _LOGGER = logging.getLogger(__name__)
 _REQUEST_TIMEOUT = 3.0
@@ -124,20 +124,57 @@ class ClientBase:
 
     @overload
     async def request_raw(
-        self, request: CommandPacket, *, timeout: float | None = None
+        self,
+        request: CommandPacket,
+        *,
+        timeout: float | None = None,
+        priority: int = 1,
+        dedup_key: tuple | None = None,
+        retries: int = 2,
     ) -> ResponsePacket: ...
 
     @overload
     async def request_raw(
-        self, request: AmxDuetRequest, *, timeout: float | None = None
+        self,
+        request: AmxDuetRequest,
+        *,
+        timeout: float | None = None,
+        priority: int = 1,
+        dedup_key: tuple | None = None,
+        retries: int = 2,
     ) -> AmxDuetResponse: ...
 
-    @async_retry(2, asyncio.TimeoutError)
     async def request_raw(
         self,
         request: CommandPacket | AmxDuetRequest,
         *,
         timeout: float | None = None,
+        priority: int = 1,
+        dedup_key: tuple | None = None,
+        retries: int = 2,
+    ) -> ResponsePacket | AmxDuetResponse:
+        for attempt in range(retries + 1):
+            try:
+                return await self._request_raw_once(
+                    request,
+                    timeout=timeout,
+                    priority=priority,
+                    dedup_key=dedup_key,
+                )
+            except asyncio.TimeoutError:
+                if attempt >= retries:
+                    raise
+                _LOGGER.debug("Retrying: %s", request)
+
+        raise asyncio.TimeoutError()  # unreachable, satisfies type checker
+
+    async def _request_raw_once(
+        self,
+        request: CommandPacket | AmxDuetRequest,
+        *,
+        timeout: float | None = None,
+        priority: int = 1,
+        dedup_key: tuple | None = None,
     ) -> ResponsePacket | AmxDuetResponse:
         if not self._writer:
             raise NotConnectedException()
@@ -148,7 +185,7 @@ class ClientBase:
             if response.responds_to(request) and not (future.cancelled() or future.done()):
                 future.set_result(response)
 
-        await self._throttle.get()
+        await self._throttle.get(priority=priority, dedup_key=dedup_key)
 
         async with asyncio.timeout(timeout or _REQUEST_TIMEOUT):
             _LOGGER.debug("Requesting %s", request)
@@ -157,7 +194,9 @@ class ClientBase:
                 self._timestamp = time.monotonic()
                 return await future
 
-    async def send(self, zn: int, cc: CommandCodes, data: bytes) -> None:
+    async def send(
+        self, zn: int, cc: CommandCodes, data: bytes, *, priority: int = 1
+    ) -> None:
         """Send a command without waiting for a response (fire-and-forget)."""
         if not self._writer:
             raise NotConnectedException()
@@ -167,11 +206,19 @@ class ClientBase:
 
         writer = self._writer
         request = CommandPacket(zn, cc, data)
-        await self._throttle.get()
+        await self._throttle.get(priority=priority)
         await write_packet(writer, request)
 
     async def request(
-        self, zn: int, cc: CommandCodes, data: bytes, *, timeout: float | None = None
+        self,
+        zn: int,
+        cc: CommandCodes,
+        data: bytes,
+        *,
+        timeout: float | None = None,
+        priority: int = 1,
+        dedup_key: tuple | None = None,
+        retries: int = 2,
     ):
         """Send a command and return the response data bytes.
 
@@ -184,10 +231,16 @@ class ClientBase:
             raise UnsupportedZone()
 
         if cc.flags & EnumFlags.SEND_ONLY:
-            await self.send(zn, cc, data)
+            await self.send(zn, cc, data, priority=priority)
             return
 
-        response = await self.request_raw(CommandPacket(zn, cc, data), timeout=timeout)
+        response = await self.request_raw(
+            CommandPacket(zn, cc, data),
+            timeout=timeout,
+            priority=priority,
+            dedup_key=dedup_key,
+            retries=retries,
+        )
 
         if response.ac == AnswerCodes.STATUS_UPDATE:
             return response.data
