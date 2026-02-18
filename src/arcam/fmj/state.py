@@ -830,8 +830,12 @@ class State:
                 return
         self._presets = presets
 
-    async def _update_now_playing(self) -> None:
-        """Query NOW_PLAYING_INFO sub-queries (0xF0–0xF5)."""
+    async def update_now_playing(self) -> None:
+        """Query NOW_PLAYING_INFO sub-queries (0xF0–0xF5).
+
+        Public so the integration can periodically re-poll metadata
+        while a network source is active.
+        """
         if not self._supports_command(CommandCodes.NOW_PLAYING_INFO):
             return
         now_playing: dict[int, Any] = {}
@@ -949,7 +953,7 @@ class State:
                         self._update_command(CommandCodes.ZONE_SETTINGS),
                         self._update_command(CommandCodes.ROOM_EQ_NAMES),
                         self._update_command(CommandCodes.VIDEO_OUTPUT_FRAME_RATE),
-                        self._update_now_playing(),
+                        self.update_now_playing(),
                         self._update_command(CommandCodes.HEADPHONES),
                         self._update_command(CommandCodes.DIRECT_MODE_STATUS),
                         self._update_command(CommandCodes.SELECT_ANALOG_DIGITAL),
