@@ -105,9 +105,9 @@ Audio Controls
 
 .. code-block:: python
 
-    # Bass/Treble: 0x00 (-7) to 0x0E (+7), center = 0x07
-    await state.set_bass(0x07)        # flat
-    await state.set_treble(0x09)      # +2
+    # Bass/Treble: 0x00 (0dB) to 0x0C (+12dB), 0x81 (-1dB) to 0x8C (-12dB)
+    await state.set_bass(0x00)        # flat (0dB)
+    await state.set_treble(0x02)      # +2dB
 
     # Balance: 0x00 (full left) to 0x0C (full right), center = 0x06
     await state.set_balance(0x06)     # center
@@ -124,7 +124,7 @@ Audio Controls
     # Room EQ: 0=off, 1=EQ1, 2=EQ2, 3=EQ3, 4=not calculated
     await state.set_room_eq(1)
 
-    # Compression: 0x00 (off), 0x01 (low), 0x02 (mid), 0x03 (high)
+    # Compression: 0x00 (off), 0x01 (medium), 0x02 (high)
     await state.set_compression(0x01)
 
 Dolby Audio (HDA Series)
@@ -672,10 +672,35 @@ Code to set volume and source using console.
 
 .. code-block:: bash
 
-    arcam-fmj state --host 192.168.0.2 --port 50000 --source 5 --volume 50
+    arcam-fmj state --host 192.168.0.2 --port 50000 --source PVR --volume 50
 
 Changelog
 =========
+
+2.4.0
+-----
+- Priority queue for command polling (power/source first, info commands last)
+- Request deduplication to avoid redundant queries
+- Polling optimization: skip commands when device is in standby
+
+2.3.0
+-----
+- **Architecture:** Split ``__init__.py`` into submodules (``enums.py``, ``packets.py``,
+  ``dataclasses.py``, ``exceptions.py``, ``discovery.py``); backwards-compatible re-exports
+- **New state commands:** ``get_imax_enhanced()``/``set_imax_enhanced()``,
+  ``get_sub_stereo_trim()``/``set_sub_stereo_trim()``, ``get_headphones()``,
+  ``get_software_version()``, ``get_incoming_audio_sample_rate()``,
+  ``get_incoming_audio_format()``, ``get_incoming_video_parameters()``,
+  ``get_input_name()``, ``get_dab_station()``, ``get_dls_pdt()``,
+  ``get_preset_details()``, ``get_menu()``
+- **Protocol reference:** Added ``docs/protocol-reference.md`` (SH289E Rev F)
+- **Display:** Rich-powered live state display (``arcam-fmj state`` with ``rich``)
+- Sequential state polling with standby awareness
+- Fixed compression range validation (0–2, not 0–3)
+- Fixed multichannel PCM detection in ``get_2ch()``
+- Renamed MCH 0x03 to ``DTS_NEURAL_X``
+- Decode mode get/set fallback on query error
+- Test coverage improved from 82% to 93%
 
 2.2.0
 -----
